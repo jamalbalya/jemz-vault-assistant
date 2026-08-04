@@ -1,0 +1,241 @@
+/* Find tab: saved-view sidebar, filter builder, results, and contextual panels. */
+
+.jva-find {
+	display: flex;
+	flex: 1 1 auto;
+	min-height: 0;
+	overflow: hidden;
+}
+
+.jva-find__sidebar {
+	flex: 0 0 14em;
+	border-right: 1px solid var(--background-modifier-border);
+	overflow-y: auto;
+	padding: var(--size-4-2);
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-2-1);
+}
+
+.jva-find__sidebar-heading {
+	font-size: var(--font-ui-smaller);
+	font-weight: var(--font-semibold);
+	color: var(--text-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	padding: var(--size-2-1) var(--size-2-2);
+}
+
+.jva-saved-view {
+	display: flex;
+	align-items: center;
+	gap: var(--size-2-2);
+	padding: var(--size-2-2);
+	border-radius: var(--radius-s);
+	cursor: pointer;
+	font-size: var(--font-ui-smaller);
+	border: none;
+	background: none;
+	color: var(--text-normal);
+	text-align: left;
+	width: 100%;
+}
+
+.jva-saved-view:hover,
+.jva-saved-view:focus-visible {
+	background-color: var(--background-modifier-hover);
+	outline: none;
+}
+
+.jva-saved-view.is-active {
+	background-color: var(--background-modifier-active-hover);
+	font-weight: var(--font-medium);
+}
+
+.jva-saved-view__icon {
+	flex: 0 0 auto;
+}
+
+.jva-saved-view__name {
+	flex: 1 1 auto;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.jva-saved-view__pin {
+	color: var(--text-faint);
+	flex: 0 0 auto;
+}
+
+.jva-saved-view__pin .svg-icon {
+	width: var(--icon-xs);
+	height: var(--icon-xs);
+}
+
+.jva-find__main {
+	flex: 1 1 auto;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+}
+
+.jva-find__search {
+	display: flex;
+	align-items: center;
+	gap: var(--size-2-2);
+	padding: var(--size-4-2) var(--size-4-3);
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.jva-find__search input {
+	flex: 1 1 auto;
+}
+
+.jva-find__toolbar {
+	display: flex;
+	align-items: center;
+	gap: var(--size-2-2);
+	padding: var(--size-2-2) var(--size-4-3);
+	flex-wrap: wrap;
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+
+.jva-find__results {
+	flex: 1 1 auto;
+	min-height: 0;
+	overflow-y: auto;
+	padding: 0 var(--size-4-3) var(--size-4-3);
+}
+
+.jva-result__snippet mark {
+	background-color: var(--text-highlight-bg);
+	color: inherit;
+	padding: 0;
+}
+
+/* ----------------------------------------------------------- filter builder -- */
+
+.jva-filters {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-2-2);
+	padding: var(--size-2-2) var(--size-4-3);
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.jva-filter-row {
+	display: flex;
+	align-items: center;
+	gap: var(--size-2-2);
+	flex-wrap: wrap;
+}
+
+.jva-filter-row select,
+.jva-filter-row input {
+	font-size: var(--font-ui-smaller);
+}
+
+.jva-filter-row__value {
+	flex: 1 1 8em;
+	min-width: 6em;
+}
+
+.jva-filters__logic {
+	display: flex;
+	align-items: center;
+	gap: var(--size-2-2);
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+
+/* --------------------------------------------------------------- contextual -- */
+
+.jva-contextual {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-3);
+	padding: var(--size-4-3);
+}
+
+.jva-contextual__panel {
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	overflow: hidden;
+}
+
+.jva-contextual__header {
+	display: flex;
+	align-items: center;
+	gap: var(--size-2-2);
+	padding: var(--size-2-2) var(--size-4-2);
+	background-color: var(--background-secondary);
+	cursor: pointer;
+	font-size: var(--font-ui-smaller);
+	font-weight: var(--font-medium);
+}
+
+.jva-contextual__body {
+	padding: var(--size-4-2);
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-2-2);
+}
+
+.jva-mention {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-2-1);
+	padding: var(--size-2-2);
+	border-radius: var(--radius-s);
+	background-color: var(--background-secondary);
+}
+
+.jva-mention__context {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+
+.jva-mention__context mark {
+	background-color: var(--text-highlight-bg);
+	color: inherit;
+}
+
+.jva-similar__score {
+	font-variant-numeric: tabular-nums;
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+.jva-onthisday__year {
+	font-size: var(--font-ui-smaller);
+	font-weight: var(--font-semibold);
+	color: var(--text-muted);
+	margin-top: var(--size-4-2);
+}
+
+@media (max-width: 700px) {
+	.jva-find {
+		flex-direction: column;
+	}
+
+	.jva-find__sidebar {
+		flex: 0 0 auto;
+		max-height: 12em;
+		border-right: none;
+		border-bottom: 1px solid var(--background-modifier-border);
+		flex-direction: row;
+		overflow-x: auto;
+	}
+
+	.jva-find__sidebar-heading {
+		display: none;
+	}
+
+	.jva-saved-view {
+		width: auto;
+		white-space: nowrap;
+	}
+}

@@ -1,0 +1,32 @@
+# vscode
+.vscode
+
+# Intellij
+*.iml
+.idea
+
+# npm
+node_modules
+
+# Build output — released via GitHub releases, not committed.
+main.js
+styles.css
+
+# Exclude sourcemaps
+*.map
+
+# obsidian
+data.json
+
+# test / coverage output
+coverage
+.vitest
+
+# macOS
+.DS_Store
+
+# Document build
+jemz-vault-assistant.md
+jemz-vault-assistant-addendum.md
+PLAN.md
+TESTING_GUIDE.md

@@ -1,0 +1,136 @@
+/* Inbox list and the full-screen triage overlay. */
+
+.jva-inbox__toolbar {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+	padding: var(--size-4-2) var(--size-4-3);
+	border-bottom: 1px solid var(--background-modifier-border);
+	flex-wrap: wrap;
+}
+
+.jva-inbox__count {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+
+.jva-inbox__item .jva-list-item__title {
+	font-size: var(--font-ui-small);
+}
+
+.jva-inbox__source {
+	color: var(--text-accent);
+}
+
+/* ------------------------------------------------------------------- triage -- */
+
+.jva-triage {
+	position: fixed;
+	inset: 0;
+	z-index: var(--layer-modal);
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: var(--size-4-4);
+	padding: var(--size-4-4);
+	background-color: var(--background-primary);
+}
+
+.jva-triage__progress {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+	font-variant-numeric: tabular-nums;
+}
+
+.jva-triage__card {
+	width: min(42em, 100%);
+	max-height: 55vh;
+	overflow-y: auto;
+	padding: var(--size-4-4);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-l);
+	background-color: var(--background-secondary);
+	box-shadow: var(--shadow-s);
+}
+
+.jva-triage__title {
+	margin: 0 0 var(--size-2-2);
+	font-size: var(--font-ui-large);
+}
+
+.jva-triage__meta {
+	display: flex;
+	gap: var(--size-2-2);
+	flex-wrap: wrap;
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+	margin-bottom: var(--size-4-2);
+}
+
+.jva-triage__body {
+	white-space: pre-wrap;
+	color: var(--text-normal);
+	font-size: var(--font-ui-small);
+	line-height: var(--line-height-normal);
+}
+
+.jva-triage__actions {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(9em, 1fr));
+	gap: var(--size-2-2);
+	width: min(42em, 100%);
+}
+
+.jva-triage__actions .jva-button {
+	flex-direction: column;
+	gap: var(--size-2-1);
+	padding: var(--size-4-2);
+}
+
+.jva-triage__footer {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-3);
+	font-size: var(--font-ui-smaller);
+	color: var(--text-faint);
+}
+
+.jva-triage__summary {
+	width: min(32em, 100%);
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-2-2);
+}
+
+.jva-triage__summary-row {
+	display: flex;
+	justify-content: space-between;
+	padding: var(--size-2-2) 0;
+	border-bottom: 1px solid var(--background-modifier-border);
+	font-size: var(--font-ui-small);
+}
+
+.jva-triage__summary-row:last-of-type {
+	border-bottom: none;
+}
+
+.jva-triage__summary-value {
+	font-variant-numeric: tabular-nums;
+	font-weight: var(--font-medium);
+}
+
+@media (max-width: 600px) {
+	.jva-triage {
+		justify-content: flex-start;
+		gap: var(--size-4-2);
+	}
+
+	.jva-triage__card {
+		max-height: 40vh;
+	}
+
+	.jva-triage__actions {
+		grid-template-columns: repeat(2, 1fr);
+	}
+}

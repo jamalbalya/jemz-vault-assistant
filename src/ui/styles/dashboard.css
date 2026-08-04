@@ -1,0 +1,215 @@
+/* Dashboard shell: header stats, tab strip, and the shared tab body. */
+
+.jva-dashboard {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	overflow: hidden;
+}
+
+.jva-dashboard__header {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+	padding: var(--size-4-3) var(--size-4-3) var(--size-4-2);
+	border-bottom: 1px solid var(--background-modifier-border);
+	flex-wrap: wrap;
+}
+
+.jva-dashboard__title {
+	margin: 0;
+	font-size: var(--font-ui-medium);
+	font-weight: var(--font-semibold);
+}
+
+.jva-dashboard__stats {
+	display: flex;
+	align-items: center;
+	gap: var(--size-2-2);
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+
+.jva-dashboard__stat {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--size-2-1);
+}
+
+.jva-dashboard__stat-sep {
+	color: var(--text-faint);
+}
+
+.jva-dashboard__tabs {
+	display: flex;
+	gap: var(--size-2-1);
+	padding: 0 var(--size-4-3);
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.jva-tab {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--size-2-2);
+	padding: var(--size-2-2) var(--size-4-2);
+	border: none;
+	background: none;
+	color: var(--text-muted);
+	cursor: pointer;
+	border-bottom: 2px solid transparent;
+	font-size: var(--font-ui-smaller);
+}
+
+.jva-tab:hover {
+	color: var(--text-normal);
+}
+
+.jva-tab.is-active {
+	color: var(--text-normal);
+	border-bottom-color: var(--interactive-accent);
+	font-weight: var(--font-medium);
+}
+
+.jva-tab:focus-visible {
+	outline: 2px solid var(--background-modifier-border-focus);
+	outline-offset: -2px;
+}
+
+.jva-tab__count {
+	font-size: var(--font-smallest);
+	background-color: var(--background-modifier-hover);
+	border-radius: var(--radius-s);
+	padding: 0 var(--size-2-2);
+}
+
+.jva-dashboard__body {
+	flex: 1 1 auto;
+	min-height: 0;
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+}
+
+.jva-tab-panel {
+	flex: 1 1 auto;
+	min-height: 0;
+	display: none;
+	flex-direction: column;
+	overflow: hidden;
+}
+
+.jva-tab-panel.is-active {
+	display: flex;
+}
+
+/* Onboarding */
+
+.jva-welcome__steps {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-3);
+}
+
+.jva-welcome__step {
+	display: flex;
+	gap: var(--size-4-2);
+	align-items: flex-start;
+}
+
+.jva-welcome__step-icon {
+	display: inline-flex;
+	color: var(--interactive-accent);
+	flex: 0 0 auto;
+	margin-top: 2px;
+}
+
+.jva-welcome__step-title {
+	font-weight: var(--font-medium);
+	margin: 0 0 var(--size-2-1);
+}
+
+.jva-welcome__step-body {
+	margin: 0;
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+.jva-welcome__folders {
+	padding: var(--size-4-2);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	background-color: var(--background-secondary);
+}
+
+/* Settings */
+
+.jva-settings__weights {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-2-2);
+}
+
+.jva-settings__weight-row {
+	display: grid;
+	grid-template-columns: 1fr auto auto;
+	align-items: center;
+	gap: var(--size-4-2);
+}
+
+.jva-settings__weight-input {
+	width: 5em;
+}
+
+.jva-action-log {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-2-1);
+	max-height: 22em;
+	overflow-y: auto;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	padding: var(--size-4-2);
+}
+
+.jva-action-log__entry {
+	display: flex;
+	gap: var(--size-4-2);
+	font-size: var(--font-ui-smaller);
+	padding: var(--size-2-1) 0;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.jva-action-log__entry:last-child {
+	border-bottom: none;
+}
+
+.jva-action-log__time {
+	color: var(--text-faint);
+	flex: 0 0 auto;
+	font-variant-numeric: tabular-nums;
+}
+
+.jva-action-log__action {
+	font-weight: var(--font-medium);
+	flex: 0 0 auto;
+}
+
+.jva-action-log__details {
+	color: var(--text-muted);
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.jva-action-log__result--failure {
+	color: var(--text-error);
+}
+
+.jva-action-log__result--partial {
+	color: var(--text-warning);
+}
+
+.jva-action-log__result--success {
+	color: var(--text-success);
+}

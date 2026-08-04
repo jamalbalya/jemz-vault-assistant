@@ -1,0 +1,6 @@
+node_modules
+coverage
+main.js
+styles.css
+package-lock.json
+test-vault

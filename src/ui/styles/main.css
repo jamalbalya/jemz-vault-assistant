@@ -1,0 +1,514 @@
+/*
+ * Jemz Vault Assistant — base styles and shared components.
+ *
+ * Colours, spacing and radii come exclusively from Obsidian's CSS variables so the plugin
+ * inherits every theme, including light/dark switches, without shipping its own palette.
+ */
+
+@import './dashboard.css';
+@import './inbox.css';
+@import './health.css';
+@import './retrieval.css';
+
+/* --------------------------------------------------------------------- base -- */
+
+.jva-view {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	overflow: hidden;
+	font-size: var(--font-ui-small);
+}
+
+.jva-scroll {
+	flex: 1 1 auto;
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	padding: var(--size-4-2) var(--size-4-3);
+}
+
+.jva-stack {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-2);
+}
+
+.jva-row {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+	flex-wrap: wrap;
+}
+
+.jva-spacer {
+	flex: 1 1 auto;
+}
+
+.jva-muted {
+	color: var(--text-muted);
+}
+
+.jva-faint {
+	color: var(--text-faint);
+}
+
+/* ------------------------------------------------------------------ buttons -- */
+
+.jva-button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: var(--size-2-2);
+	padding: var(--size-2-2) var(--size-4-2);
+	border-radius: var(--radius-s);
+	font-size: var(--font-ui-smaller);
+	cursor: pointer;
+	white-space: nowrap;
+}
+
+.jva-button__icon {
+	display: inline-flex;
+	align-items: center;
+}
+
+.jva-button__icon .svg-icon {
+	width: var(--icon-s);
+	height: var(--icon-s);
+}
+
+.jva-button__shortcut {
+	font-size: var(--font-smallest);
+	color: var(--text-faint);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	padding: 0 var(--size-2-1);
+}
+
+.jva-button.is-disabled,
+.jva-button[disabled] {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+.jva-button-row {
+	display: flex;
+	align-items: center;
+	gap: var(--size-2-2);
+	flex-wrap: wrap;
+}
+
+/* ------------------------------------------------------------------- modals -- */
+
+.jva-modal__title {
+	margin: 0 0 var(--size-4-2);
+	font-size: var(--font-ui-large);
+}
+
+.jva-modal__body {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-2);
+}
+
+.jva-modal__footer {
+	margin-top: var(--size-4-4);
+}
+
+.jva-modal__actions {
+	justify-content: flex-end;
+}
+
+.jva-field {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-2-1);
+}
+
+.jva-field__label {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+
+.jva-field__error {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-error);
+}
+
+.jva-field input[type='text'],
+.jva-field input[type='url'],
+.jva-field select,
+.jva-field textarea {
+	width: 100%;
+}
+
+.jva-field textarea {
+	min-height: 8em;
+	resize: vertical;
+}
+
+/* -------------------------------------------------------------- list items -- */
+
+.jva-list {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-2-2);
+}
+
+.jva-list-item {
+	display: flex;
+	align-items: flex-start;
+	gap: var(--size-4-2);
+	padding: var(--size-4-2);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	background-color: var(--background-primary);
+}
+
+.jva-list-item.is-clickable:hover,
+.jva-list-item.is-clickable:focus-visible {
+	background-color: var(--background-modifier-hover);
+	outline: none;
+}
+
+.jva-list-item.is-clickable:focus-visible {
+	box-shadow: 0 0 0 2px var(--background-modifier-border-focus);
+}
+
+.jva-list-item__main {
+	flex: 1 1 auto;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-2-1);
+}
+
+.jva-list-item__title-row {
+	display: flex;
+	align-items: center;
+	gap: var(--size-2-2);
+	min-width: 0;
+}
+
+.jva-list-item__icon {
+	display: inline-flex;
+	color: var(--text-muted);
+	flex: 0 0 auto;
+}
+
+.jva-list-item__title {
+	font-weight: var(--font-medium);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.jva-list-item__meta {
+	display: flex;
+	gap: var(--size-2-1);
+	flex-wrap: wrap;
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+
+.jva-list-item__meta-sep {
+	color: var(--text-faint);
+}
+
+.jva-list-item__preview {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.jva-list-item__badges {
+	display: flex;
+	gap: var(--size-2-1);
+	flex-wrap: wrap;
+}
+
+.jva-list-item__actions {
+	display: flex;
+	gap: var(--size-2-1);
+	flex-wrap: wrap;
+	flex: 0 0 auto;
+}
+
+.jva-badge {
+	font-size: var(--font-smallest);
+	padding: 0 var(--size-2-2);
+	border-radius: var(--radius-s);
+	background-color: var(--background-modifier-hover);
+	color: var(--text-muted);
+}
+
+.jva-section-heading {
+	display: flex;
+	align-items: center;
+	gap: var(--size-2-2);
+	margin-top: var(--size-4-3);
+	font-size: var(--font-ui-smaller);
+	font-weight: var(--font-semibold);
+	color: var(--text-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+}
+
+.jva-section-heading__count {
+	background-color: var(--background-modifier-hover);
+	border-radius: var(--radius-s);
+	padding: 0 var(--size-2-2);
+}
+
+.jva-pagination {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: var(--size-4-2);
+	padding: var(--size-4-2) 0;
+}
+
+.jva-pagination__label {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+
+/* ------------------------------------------------------- empty and loading -- */
+
+.jva-empty-state {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: var(--size-4-2);
+	padding: var(--size-4-8) var(--size-4-4);
+	text-align: center;
+	color: var(--text-muted);
+}
+
+.jva-empty-state__icon .svg-icon,
+.jva-error-state__icon .svg-icon {
+	width: var(--icon-xl);
+	height: var(--icon-xl);
+	color: var(--text-faint);
+}
+
+.jva-empty-state__title,
+.jva-error-state__title {
+	margin: 0;
+	font-size: var(--font-ui-medium);
+	color: var(--text-normal);
+}
+
+.jva-empty-state__body,
+.jva-error-state__body {
+	margin: 0;
+	max-width: 32em;
+}
+
+.jva-empty-inline {
+	padding: var(--size-4-2);
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+.jva-error-state {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: var(--size-4-2);
+	padding: var(--size-4-6);
+	text-align: center;
+}
+
+.jva-error-state__icon .svg-icon {
+	color: var(--text-error);
+}
+
+.jva-loading {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+	padding: var(--size-4-3);
+	color: var(--text-muted);
+}
+
+.jva-loading__spinner {
+	width: var(--icon-s);
+	height: var(--icon-s);
+	border: 2px solid var(--background-modifier-border);
+	border-top-color: var(--interactive-accent);
+	border-radius: 50%;
+	animation: jva-spin 0.8s linear infinite;
+}
+
+@keyframes jva-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.jva-loading__spinner {
+		animation-duration: 3s;
+	}
+}
+
+/* ------------------------------------------------------------------ progress -- */
+
+.jva-progress {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-2-1);
+	width: 100%;
+}
+
+.jva-progress__label {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+
+.jva-progress__track {
+	height: 6px;
+	border-radius: var(--radius-s);
+	background-color: var(--background-modifier-border);
+	overflow: hidden;
+}
+
+.jva-progress__fill {
+	height: 100%;
+	width: 0;
+	background-color: var(--interactive-accent);
+	transition: width 120ms linear;
+}
+
+.jva-progress.is-indeterminate .jva-progress__fill {
+	width: 35%;
+	animation: jva-indeterminate 1.2s ease-in-out infinite;
+}
+
+@keyframes jva-indeterminate {
+	0% {
+		transform: translateX(-100%);
+	}
+	100% {
+		transform: translateX(300%);
+	}
+}
+
+/* ---------------------------------------------------------------- tag input -- */
+
+.jva-tag-input {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-2-1);
+}
+
+.jva-tag-input__chips {
+	display: flex;
+	gap: var(--size-2-1);
+	flex-wrap: wrap;
+}
+
+.jva-tag-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--size-2-1);
+	padding: var(--size-2-1) var(--size-2-2);
+	border-radius: var(--radius-s);
+	background-color: var(--background-modifier-hover);
+	font-size: var(--font-ui-smaller);
+}
+
+.jva-tag-chip__remove {
+	display: inline-flex;
+	cursor: pointer;
+	color: var(--text-faint);
+}
+
+.jva-tag-chip__remove:hover {
+	color: var(--text-normal);
+}
+
+.jva-tag-chip__remove .svg-icon {
+	width: var(--icon-xs);
+	height: var(--icon-xs);
+}
+
+.jva-tag-input__suggestions {
+	position: absolute;
+	top: 100%;
+	left: 0;
+	right: 0;
+	z-index: var(--layer-menu);
+	background-color: var(--background-secondary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	box-shadow: var(--shadow-s);
+	max-height: 12em;
+	overflow-y: auto;
+}
+
+.jva-tag-input__suggestion {
+	padding: var(--size-2-2) var(--size-4-2);
+	cursor: pointer;
+	font-size: var(--font-ui-smaller);
+}
+
+.jva-tag-input__suggestion:hover,
+.jva-tag-input__suggestion.is-active {
+	background-color: var(--background-modifier-hover);
+}
+
+/* ------------------------------------------------------------------- mobile -- */
+
+@media (max-width: 600px) {
+	/* Full-screen sheets keep fields visible above the on-screen keyboard. */
+	.jva-modal-el--mobile {
+		width: 100vw;
+		max-width: 100vw;
+		height: 100vh;
+		max-height: 100vh;
+		border-radius: 0;
+	}
+
+	.jva-modal--mobile {
+		display: flex;
+		flex-direction: column;
+		height: 100%;
+	}
+
+	.jva-modal--mobile .jva-modal__body {
+		flex: 1 1 auto;
+		overflow-y: auto;
+	}
+
+	.jva-modal--mobile .jva-modal__footer {
+		position: sticky;
+		bottom: 0;
+		background-color: var(--background-primary);
+		padding-top: var(--size-4-2);
+	}
+
+	/* Every interactive target reaches the 44x44 minimum. */
+	.jva-button,
+	.jva-list-item__checkbox,
+	.jva-tag-chip__remove {
+		min-height: 44px;
+		min-width: 44px;
+	}
+
+	.jva-list-item {
+		flex-direction: column;
+	}
+
+	.jva-list-item__actions {
+		width: 100%;
+	}
+
+	.jva-list-item__actions .jva-button {
+		flex: 1 1 auto;
+	}
+}
