@@ -17,10 +17,9 @@
 		"allowSyntheticDefaultImports": true,
 		"esModuleInterop": true,
 		"resolveJsonModule": true,
-		"baseUrl": ".",
 		"paths": {
-			"obsidian": ["node_modules/obsidian/obsidian.d.ts"],
-			"@/*": ["src/*"]
+			"obsidian": ["./node_modules/obsidian/obsidian.d.ts"],
+			"@/*": ["./src/*"]
 		},
 		"lib": ["ES2021", "DOM", "DOM.Iterable"]
 	},
