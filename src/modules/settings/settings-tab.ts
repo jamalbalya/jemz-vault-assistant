@@ -1,36 +1,47 @@
 /**
  * The plugin's settings tab (main spec 8.4, addendum 3.4).
  *
- * Three rules shape this file:
+ * The screen is declared, not drawn. {@link JemzSettingTab.getSettingDefinitions} returns the
+ * whole surface as data; Obsidian 1.13 renders it, indexes it for settings search, and
+ * reconciles it whenever {@link JemzSettingTab.update} is called. Four rules shape this file:
  *
  *  1. Every control writes straight through {@link SettingsStore.update}. There is no "Apply"
  *     button and no local draft copy, because a settings screen that can be closed mid-edit
  *     must never leave the user wondering whether their change stuck.
- *  2. Nothing garbage-looking is ever persisted. Numbers are parsed, rejected when they are
- *     not finite, and clamped into a range the rest of the plugin can survive; comma
- *     separated fields drop blank entries; folder and type fields refuse to store an empty
- *     string. `data.json` is plain JSON a user can hand-edit, and this screen is the one place
- *     that decides what a legal value looks like.
+ *  2. Nothing garbage-looking is ever persisted. The declarative API addresses controls by a
+ *     flat key, so every key is registered with a {@link ControlBinding} that parses first:
+ *     numbers that are not finite are dropped and the rest clamped into a range the plugin
+ *     can survive, comma separated fields drop blank entries, and folder and type fields
+ *     refuse to store an empty string. `data.json` is plain JSON a user can hand-edit, and
+ *     this screen is the one place that decides what a legal value looks like.
  *  3. Copy comes from {@link STRINGS} only. The two exceptions are log levels and scan
  *     frequencies, whose labels are derived from the stored identifiers with
  *     {@link capitalize} rather than duplicated as a second set of literals — a translation
  *     changes the string table, and these labels would only ever restate the enum.
+ *  4. Anything the definitions cannot express as a control — the score weight inputs, the
+ *     ignore lists, the action log — is a `render` row inside the same definitions, never a
+ *     parallel imperative screen. One description of the settings surface, not two.
  *
- * Teardown: `PluginSettingTab` is not a `Component`, so it has no `registerDomEvent`. Every
- * listener this file adds is therefore either attached by Obsidian's own `Setting` components
- * (which live and die with the elements inside `containerEl`) or registered through
- * {@link JemzSettingTab.listen}, which {@link JemzSettingTab.hide} unwinds. Nothing is ever
- * attached to `document` or `window`, so closing the tab leaves nothing behind.
+ * Teardown: `PluginSettingTab` is not a `Component`, so it has no `registerDomEvent`. Nothing
+ * here needs one. Obsidian owns every element it renders from these definitions, the listener
+ * the score weight inputs add is handed back as the cleanup a `render` row may return, and
+ * nothing is ever attached to `document` or `window` — so closing the tab leaves nothing
+ * behind and there is no imperative `display()` left to unwind.
  */
 
 import {
 	Notice,
 	Platform,
 	PluginSettingTab,
-	Setting,
 	type App,
 	type ButtonComponent,
 	type Plugin,
+	type Setting,
+	type SettingDefinitionControl,
+	type SettingDefinitionGroup,
+	type SettingDefinitionItem,
+	type SettingDefinitionList,
+	type SettingDefinitionRender,
 } from 'obsidian';
 import { LINKS, MAX_ACTION_LOG_ENTRIES } from '../../core/constants';
 import type { Logger } from '../../core/logger';
@@ -152,9 +163,68 @@ function optionsFor(values: readonly string[]): Record<string, string> {
 }
 
 /**
+ * A candidate from a control, as text.
+ *
+ * The declarative API hands `setControlValue` an `unknown`: a text control sends a string, a
+ * number control sends a number (already `defaultValue` when the typed text did not parse).
+ * Both are normalised to text here so one parser decides what is storable.
+ */
+function asText(raw: unknown): string | null {
+	if (typeof raw === 'string') return raw;
+	if (typeof raw === 'number') return String(raw);
+	return null;
+}
+
+/**
+ * The read/write pair behind one declarative control key.
+ *
+ * Obsidian addresses declarative controls by a flat string key, routed through
+ * {@link JemzSettingTab.getControlValue} and {@link JemzSettingTab.setControlValue}. The
+ * plugin's settings are a nested object whose fields each have their own parsing rules, so
+ * every key is registered with the accessors that know how to read it and — more importantly
+ * — how to refuse a value that would leave something unusable in `data.json`.
+ */
+interface ControlBinding {
+	/** The value the control should show, read live from the store. */
+	readonly read: (settings: JemzSettings) => unknown;
+	/**
+	 * Turn a candidate from the control into a mutation.
+	 *
+	 * @returns A mutator, or null to reject the candidate and leave the stored value alone.
+	 */
+	readonly coerce: (raw: unknown) => ((settings: JemzSettings) => void) | null;
+	/**
+	 * Skip the store's write coalescing.
+	 *
+	 * Used for discrete controls, where one interaction is one write and a failure has to
+	 * surface while the user still remembers the click; text and slider edits stay coalesced
+	 * so a keystroke or a drag is not a disk write each.
+	 */
+	readonly immediate: boolean;
+}
+
+/**
+ * A sub-heading inside a section.
+ *
+ * `SettingDefinitionGroup` carries a heading but no description, and groups cannot nest
+ * (`SettingGroupItem` admits only settings and pages), so the sub-headings this screen has
+ * always had are rendered as heading rows instead. That also keeps their descriptions, which
+ * a group heading has nowhere to put.
+ */
+function headingRow(name: string, desc?: string): SettingDefinitionRender {
+	return {
+		name,
+		desc,
+		render: (setting: Setting): void => {
+			setting.setHeading();
+		},
+	};
+}
+
+/**
  * Everything the plugin has recorded about this user, as plain text.
  *
- * The point of the button that opens this is trust: a user who is asked to share usage data
+ * The point of the row that opens this is trust: a user who is asked to share usage data
  * has to be able to see exactly what that means, in a form they can read without a JSON
  * viewer. Timestamps are formatted for the same reason — an epoch number proves nothing.
  */
@@ -205,12 +275,8 @@ export class JemzSettingTab extends PluginSettingTab {
 	private readonly hostPlugin: Plugin;
 	private readonly deps: SettingsTabDeps;
 
-	/** Listeners this file attached itself, unwound by {@link hide}. */
-	private readonly cleanups: (() => void)[] = [];
-
-	/** Sub-regions redrawn in place so clearing a list does not scroll the whole tab away. */
-	private ignoreListEl: HTMLElement | null = null;
-	private actionLogEl: HTMLElement | null = null;
+	/** Accessors for every control key, rebuilt with the definitions that declare them. */
+	private readonly bindings = new Map<string, ControlBinding>();
 
 	constructor(app: App, plugin: Plugin, deps: SettingsTabDeps) {
 		super(app, plugin);
@@ -219,371 +285,437 @@ export class JemzSettingTab extends PluginSettingTab {
 	}
 
 	/**
-	 * Build the whole tab.
+	 * The whole settings surface, as data.
 	 *
-	 * Obsidian calls this every time the tab is opened, so it starts by tearing down whatever
-	 * the previous visit left behind. A render that throws replaces the half-built screen with
-	 * an error state rather than a blank pane, because a settings tab that shows nothing gives
-	 * the user no way back to their configuration.
+	 * Obsidian calls this on every render and once when the tab is registered, so it doubles
+	 * as the point where the control key registry is rebuilt: the definitions and the
+	 * accessors behind them are produced together and can never disagree about which keys
+	 * exist.
 	 */
-	override display(): void {
-		this.teardown();
-		const { containerEl } = this;
-		containerEl.empty();
-
+	override getSettingDefinitions(): SettingDefinitionItem[] {
+		this.bindings.clear();
 		try {
-			this.renderGeneral(containerEl);
-			this.renderCaptureAndInbox(containerEl);
-			this.renderVaultHealth(containerEl);
-			this.renderSmartRetrieval(containerEl);
-			this.renderAnalytics(containerEl);
-			this.renderAbout(containerEl);
+			return [
+				this.generalSection(),
+				this.captureSection(),
+				this.healthSection(),
+				this.ignoreListSection(),
+				this.retrievalSection(),
+				this.analyticsSection(),
+				this.aboutSection(),
+			];
 		} catch (error) {
-			this.deps.logger.error('Could not render the settings tab', error);
-			containerEl.empty();
-			renderErrorState(containerEl, {
-				title: STRINGS.errors.unexpected,
-				retryLabel: STRINGS.common.retry,
-				onRetry: (): void => this.display(),
-			});
-		}
-	}
-
-	/** Release listeners and drop references to the removed DOM. */
-	override hide(): void {
-		this.teardown();
-		this.ignoreListEl = null;
-		this.actionLogEl = null;
-		super.hide();
-	}
-
-	/* ------------------------------------------------------------- 1. general -- */
-
-	private renderGeneral(parent: HTMLElement): void {
-		new Setting(parent).setName(STRINGS.settings.general).setHeading();
-		const { general } = this.deps.settings.get();
-
-		new Setting(parent).setName(STRINGS.settings.modulesHeading).setHeading();
-
-		this.addToggle(parent, {
-			name: STRINGS.settings.moduleCapture,
-			desc: STRINGS.settings.moduleCaptureDesc,
-			value: general.modules.capture,
-			apply: (settings, value) => {
-				settings.general.modules.capture = value;
-			},
-		});
-		this.addToggle(parent, {
-			name: STRINGS.settings.moduleHealth,
-			desc: STRINGS.settings.moduleHealthDesc,
-			value: general.modules.health,
-			apply: (settings, value) => {
-				settings.general.modules.health = value;
-			},
-		});
-		this.addToggle(parent, {
-			name: STRINGS.settings.moduleRetrieval,
-			desc: STRINGS.settings.moduleRetrievalDesc,
-			value: general.modules.retrieval,
-			apply: (settings, value) => {
-				settings.general.modules.retrieval = value;
-			},
-		});
-
-		this.addToggle(parent, {
-			name: STRINGS.settings.showRibbon,
-			desc: STRINGS.settings.showRibbonDesc,
-			value: general.showRibbonIcon,
-			apply: (settings, value) => {
-				settings.general.showRibbonIcon = value;
-			},
-		});
-		this.addToggle(parent, {
-			name: STRINGS.settings.showStatusBar,
-			desc: STRINGS.settings.showStatusBarDesc,
-			value: general.showStatusBar,
-			apply: (settings, value) => {
-				settings.general.showStatusBar = value;
-			},
-		});
-
-		new Setting(parent)
-			.setName(STRINGS.settings.logLevel)
-			.setDesc(STRINGS.settings.logLevelDesc)
-			.addDropdown((dropdown) => {
-				dropdown.addOptions(optionsFor(LOG_LEVELS));
-				dropdown.setValue(general.logLevel);
-				dropdown.onChange((value) => {
-					if (!isLogLevel(value)) return;
-					void this.persist((settings) => {
-						settings.general.logLevel = value;
-					}, true);
-				});
-			});
-
-		this.addNumber(parent, {
-			name: STRINGS.settings.inboxPageSize,
-			desc: STRINGS.settings.inboxPageSizeDesc,
-			value: general.inboxPageSize,
-			range: RANGES.inboxPageSize,
-			apply: (settings, value) => {
-				settings.general.inboxPageSize = value;
-			},
-		});
-
-		// "Sort by" is shared with the Find module rather than duplicated: it is the same
-		// control with the same meaning, and a translation should only have to write it once.
-		new Setting(parent).setName(STRINGS.find.sortLabel).addDropdown((dropdown) => {
-			dropdown.addOption(SORT_NEWEST, STRINGS.inbox.sortNewest);
-			dropdown.addOption(SORT_OLDEST, STRINGS.inbox.sortOldest);
-			dropdown.setValue(general.inboxNewestFirst ? SORT_NEWEST : SORT_OLDEST);
-			dropdown.onChange((value) => {
-				void this.persist((settings) => {
-					settings.general.inboxNewestFirst = value === SORT_NEWEST;
-				}, true);
-			});
-		});
-	}
-
-	/* --------------------------------------------------- 2. capture and inbox -- */
-
-	private renderCaptureAndInbox(parent: HTMLElement): void {
-		new Setting(parent).setName(STRINGS.settings.captureInbox).setHeading();
-		const { capture } = this.deps.settings.get();
-
-		this.addText(parent, {
-			name: STRINGS.settings.inboxFolder,
-			desc: STRINGS.settings.inboxFolderDesc,
-			value: capture.inboxFolder,
-			transform: normalizeVaultPath,
-			apply: (settings, value) => {
-				settings.capture.inboxFolder = value;
-			},
-		});
-		this.addText(parent, {
-			name: STRINGS.settings.archiveFolder,
-			desc: STRINGS.settings.archiveFolderDesc,
-			value: capture.archiveFolder,
-			transform: normalizeVaultPath,
-			apply: (settings, value) => {
-				settings.capture.archiveFolder = value;
-			},
-		});
-		this.addText(parent, {
-			name: STRINGS.settings.attachmentArchiveFolder,
-			desc: STRINGS.settings.attachmentArchiveFolderDesc,
-			value: capture.attachmentArchiveFolder,
-			transform: normalizeVaultPath,
-			apply: (settings, value) => {
-				settings.capture.attachmentArchiveFolder = value;
-			},
-		});
-
-		this.addList(parent, {
-			name: STRINGS.settings.defaultTags,
-			desc: STRINGS.settings.defaultTagsDesc,
-			value: capture.defaultTags,
-			// Tags are stored without the leading hash, so a user who types one is not punished.
-			transform: (entry) => entry.replace(/^#+/, ''),
-			apply: (settings, value) => {
-				settings.capture.defaultTags = value;
-			},
-		});
-
-		this.addText(parent, {
-			name: STRINGS.settings.defaultType,
-			desc: STRINGS.settings.defaultTypeDesc,
-			value: capture.defaultType,
-			apply: (settings, value) => {
-				settings.capture.defaultType = value;
-			},
-		});
-
-		this.addToggle(parent, {
-			name: STRINGS.settings.autoCreateFolders,
-			desc: STRINGS.settings.autoCreateFoldersDesc,
-			value: capture.autoCreateFolders,
-			apply: (settings, value) => {
-				settings.capture.autoCreateFolders = value;
-			},
-		});
-	}
-
-	/* -------------------------------------------------------- 3. vault health -- */
-
-	private renderVaultHealth(parent: HTMLElement): void {
-		new Setting(parent).setName(STRINGS.settings.vaultHealth).setHeading();
-		const { health } = this.deps.settings.get();
-
-		new Setting(parent)
-			.setName(STRINGS.settings.scanFrequency)
-			.setDesc(STRINGS.settings.scanFrequencyDesc)
-			.addDropdown((dropdown) => {
-				dropdown.addOptions(optionsFor(SCAN_FREQUENCIES));
-				dropdown.setValue(health.scanFrequency);
-				dropdown.onChange((value) => {
-					if (!isScanFrequency(value)) return;
-					void this.persist((settings) => {
-						settings.health.scanFrequency = value;
-					}, true);
-				});
-			});
-
-		this.addToggle(parent, {
-			name: STRINGS.settings.autoScanOnStartup,
-			desc: STRINGS.settings.autoScanOnStartupDesc,
-			value: health.autoScanOnStartup,
-			apply: (settings, value) => {
-				settings.health.autoScanOnStartup = value;
-			},
-		});
-
-		this.addList(parent, {
-			name: STRINGS.settings.excludedFolders,
-			desc: STRINGS.settings.excludedFoldersDesc,
-			value: health.excludedFolders,
-			transform: normalizeVaultPath,
-			apply: (settings, value) => {
-				settings.health.excludedFolders = value;
-			},
-		});
-		this.addList(parent, {
-			name: STRINGS.settings.excludedTags,
-			desc: STRINGS.settings.excludedTagsDesc,
-			value: health.excludedTags,
-			transform: (entry) => entry.replace(/^#+/, ''),
-			apply: (settings, value) => {
-				settings.health.excludedTags = value;
-			},
-		});
-		this.addList(parent, {
-			name: STRINGS.settings.excludedExtensions,
-			desc: STRINGS.settings.excludedExtensionsDesc,
-			value: health.excludedExtensions,
-			// Stored lower-case and without the dot, which is how every comparison sees them.
-			transform: (entry) => entry.replace(/^\.+/, '').toLowerCase(),
-			apply: (settings, value) => {
-				settings.health.excludedExtensions = value;
-			},
-		});
-
-		this.addToggle(parent, {
-			name: STRINGS.settings.excludeInbox,
-			desc: STRINGS.settings.excludeInboxDesc,
-			value: health.excludeInbox,
-			apply: (settings, value) => {
-				settings.health.excludeInbox = value;
-			},
-		});
-		this.addToggle(parent, {
-			name: STRINGS.settings.excludeArchived,
-			desc: STRINGS.settings.excludeArchivedDesc,
-			value: health.excludeArchived,
-			apply: (settings, value) => {
-				settings.health.excludeArchived = value;
-			},
-		});
-
-		this.addList(parent, {
-			name: STRINGS.settings.requiredFields,
-			desc: STRINGS.settings.requiredFieldsDesc,
-			value: health.requiredFrontmatterFields,
-			apply: (settings, value) => {
-				settings.health.requiredFrontmatterFields = value;
-			},
-		});
-
-		this.addNumber(parent, {
-			name: STRINGS.settings.largeFileThreshold,
-			desc: STRINGS.settings.largeFileThresholdDesc,
-			// Stored in bytes, shown in megabytes: nobody thinks about their vault in bytes.
-			value: health.largeFileThresholdBytes / BYTES_PER_MB,
-			range: RANGES.largeFileMb,
-			step: '0.1',
-			apply: (settings, value) => {
-				settings.health.largeFileThresholdBytes = Math.round(value * BYTES_PER_MB);
-			},
-		});
-
-		this.renderDetectorToggles(parent);
-		this.renderScoreWeights(parent);
-		this.renderIgnoreListsSection(parent);
-	}
-
-	private renderDetectorToggles(parent: HTMLElement): void {
-		new Setting(parent)
-			.setName(STRINGS.settings.detectorsHeading)
-			.setDesc(STRINGS.settings.detectorsDesc)
-			.setHeading();
-
-		const { detectors } = this.deps.settings.get().health;
-		for (const type of ISSUE_TYPES) {
-			this.addToggle(parent, {
-				name: STRINGS.health.types[type],
-				desc: STRINGS.health.typeDescriptions[type],
-				value: detectors[type],
-				apply: (settings, value) => {
-					settings.health.detectors[type] = value;
-				},
-			});
+			// A half-built tree would render a screen with some sections silently missing, which
+			// is worse than saying so: the user cannot tell a dropped section from a setting they
+			// never had. Everything is replaced by one row that explains itself and offers a retry.
+			this.deps.logger.error('Could not build the settings tab', error);
+			this.bindings.clear();
+			return [this.errorRow()];
 		}
 	}
 
 	/**
-	 * Per-issue and per-category score weights.
+	 * The whole tab, replaced by one recoverable error row.
 	 *
-	 * Rendered as a compact grid rather than eighteen `Setting` rows, which would bury every
-	 * other health option under a wall of identical controls.
+	 * Excluded from settings search because it is a failure state rather than a setting, and it
+	 * would otherwise answer to a query the moment anything upstream threw.
 	 */
-	private renderScoreWeights(parent: HTMLElement): void {
-		new Setting(parent)
-			.setName(STRINGS.settings.scoreWeights)
-			.setDesc(STRINGS.settings.scoreWeightsDesc)
-			.setHeading();
-
-		const weights = this.deps.settings.get().health.weights;
-		const grid = parent.createDiv({ cls: 'jva-settings__weights' });
-
-		for (const type of ISSUE_TYPES) {
-			const label = STRINGS.health.types[type];
-			const row = grid.createDiv({ cls: 'jva-settings__weight-row' });
-			row.createSpan({ text: label });
-
-			this.addWeightInput(row, {
-				label: STRINGS.settings.weightPer,
-				name: `${label} — ${STRINGS.settings.weightPer}`,
-				value: weights[type].per,
-				apply: (settings, value) => {
-					settings.health.weights[type] = {
-						per: value,
-						max: settings.health.weights[type].max,
-					};
-				},
-			});
-			this.addWeightInput(row, {
-				label: STRINGS.settings.weightMax,
-				name: `${label} — ${STRINGS.settings.weightMax}`,
-				value: weights[type].max,
-				apply: (settings, value) => {
-					settings.health.weights[type] = {
-						per: settings.health.weights[type].per,
-						max: value,
-					};
-				},
-			});
-		}
+	private errorRow(): SettingDefinitionRender {
+		return {
+			name: STRINGS.errors.unexpected,
+			searchable: false,
+			render: (setting: Setting): void => {
+				setting.settingEl.empty();
+				renderErrorState(setting.settingEl, {
+					title: STRINGS.errors.unexpected,
+					retryLabel: STRINGS.common.retry,
+					onRetry: (): void => this.update(),
+				});
+			},
+		};
 	}
 
-	private addWeightInput(
-		row: HTMLElement,
+	/**
+	 * Read the value behind a control key.
+	 *
+	 * Overridden because the base implementation reads `plugin.settings`, and this plugin
+	 * keeps its settings in a {@link SettingsStore} that owns migration, coalescing and the
+	 * change event.
+	 */
+	override getControlValue(key: string): unknown {
+		const binding = this.ensureBindings().get(key);
+		return binding?.read(this.deps.settings.get());
+	}
+
+	/**
+	 * Persist a value for a control key.
+	 *
+	 * A candidate the binding rejects is dropped rather than stored, which leaves the field
+	 * disagreeing with the store until the next render — the same bargain the imperative
+	 * version struck, and far better than persisting a value nothing downstream can use.
+	 */
+	override async setControlValue(key: string, value: unknown): Promise<void> {
+		const binding = this.ensureBindings().get(key);
+		if (!binding) return;
+
+		const mutate = binding.coerce(value);
+		if (!mutate) return;
+		await this.persist(mutate, binding.immediate);
+	}
+
+	/* ------------------------------------------------------------- 1. general -- */
+
+	private generalSection(): SettingDefinitionGroup {
+		return {
+			type: 'group',
+			heading: STRINGS.settings.general,
+			items: [
+				headingRow(STRINGS.settings.modulesHeading),
+				this.toggle({
+					key: 'general.modules.capture',
+					name: STRINGS.settings.moduleCapture,
+					desc: STRINGS.settings.moduleCaptureDesc,
+					read: (settings) => settings.general.modules.capture,
+					write: (settings, value) => {
+						settings.general.modules.capture = value;
+					},
+				}),
+				this.toggle({
+					key: 'general.modules.health',
+					name: STRINGS.settings.moduleHealth,
+					desc: STRINGS.settings.moduleHealthDesc,
+					read: (settings) => settings.general.modules.health,
+					write: (settings, value) => {
+						settings.general.modules.health = value;
+					},
+				}),
+				this.toggle({
+					key: 'general.modules.retrieval',
+					name: STRINGS.settings.moduleRetrieval,
+					desc: STRINGS.settings.moduleRetrievalDesc,
+					read: (settings) => settings.general.modules.retrieval,
+					write: (settings, value) => {
+						settings.general.modules.retrieval = value;
+					},
+				}),
+				this.toggle({
+					key: 'general.showRibbonIcon',
+					name: STRINGS.settings.showRibbon,
+					desc: STRINGS.settings.showRibbonDesc,
+					read: (settings) => settings.general.showRibbonIcon,
+					write: (settings, value) => {
+						settings.general.showRibbonIcon = value;
+					},
+				}),
+				this.toggle({
+					key: 'general.showStatusBar',
+					name: STRINGS.settings.showStatusBar,
+					desc: STRINGS.settings.showStatusBarDesc,
+					read: (settings) => settings.general.showStatusBar,
+					write: (settings, value) => {
+						settings.general.showStatusBar = value;
+					},
+				}),
+				this.dropdown({
+					key: 'general.logLevel',
+					name: STRINGS.settings.logLevel,
+					desc: STRINGS.settings.logLevelDesc,
+					options: optionsFor(LOG_LEVELS),
+					read: (settings) => settings.general.logLevel,
+					parse: (raw) => (isLogLevel(raw) ? raw : null),
+					write: (settings, value) => {
+						settings.general.logLevel = value;
+					},
+				}),
+				this.number({
+					key: 'general.inboxPageSize',
+					name: STRINGS.settings.inboxPageSize,
+					desc: STRINGS.settings.inboxPageSizeDesc,
+					range: RANGES.inboxPageSize,
+					read: (settings) => settings.general.inboxPageSize,
+					write: (settings, value) => {
+						settings.general.inboxPageSize = value;
+					},
+				}),
+				// "Sort by" is shared with the Find module rather than duplicated: it is the same
+				// control with the same meaning, and a translation should only have to write it once.
+				this.dropdown({
+					key: 'general.inboxNewestFirst',
+					name: STRINGS.find.sortLabel,
+					options: {
+						[SORT_NEWEST]: STRINGS.inbox.sortNewest,
+						[SORT_OLDEST]: STRINGS.inbox.sortOldest,
+					},
+					read: (settings) =>
+						settings.general.inboxNewestFirst ? SORT_NEWEST : SORT_OLDEST,
+					parse: (raw) => (raw === SORT_NEWEST || raw === SORT_OLDEST ? raw : null),
+					write: (settings, value) => {
+						settings.general.inboxNewestFirst = value === SORT_NEWEST;
+					},
+				}),
+			],
+		};
+	}
+
+	/* --------------------------------------------------- 2. capture and inbox -- */
+
+	private captureSection(): SettingDefinitionGroup {
+		return {
+			type: 'group',
+			heading: STRINGS.settings.captureInbox,
+			items: [
+				this.text({
+					key: 'capture.inboxFolder',
+					name: STRINGS.settings.inboxFolder,
+					desc: STRINGS.settings.inboxFolderDesc,
+					transform: normalizeVaultPath,
+					read: (settings) => settings.capture.inboxFolder,
+					write: (settings, value) => {
+						settings.capture.inboxFolder = value;
+					},
+				}),
+				this.text({
+					key: 'capture.archiveFolder',
+					name: STRINGS.settings.archiveFolder,
+					desc: STRINGS.settings.archiveFolderDesc,
+					transform: normalizeVaultPath,
+					read: (settings) => settings.capture.archiveFolder,
+					write: (settings, value) => {
+						settings.capture.archiveFolder = value;
+					},
+				}),
+				this.text({
+					key: 'capture.attachmentArchiveFolder',
+					name: STRINGS.settings.attachmentArchiveFolder,
+					desc: STRINGS.settings.attachmentArchiveFolderDesc,
+					transform: normalizeVaultPath,
+					read: (settings) => settings.capture.attachmentArchiveFolder,
+					write: (settings, value) => {
+						settings.capture.attachmentArchiveFolder = value;
+					},
+				}),
+				this.list({
+					key: 'capture.defaultTags',
+					name: STRINGS.settings.defaultTags,
+					desc: STRINGS.settings.defaultTagsDesc,
+					// Tags are stored without the leading hash, so a user who types one is not punished.
+					transform: (entry) => entry.replace(/^#+/, ''),
+					read: (settings) => settings.capture.defaultTags,
+					write: (settings, value) => {
+						settings.capture.defaultTags = value;
+					},
+				}),
+				this.text({
+					key: 'capture.defaultType',
+					name: STRINGS.settings.defaultType,
+					desc: STRINGS.settings.defaultTypeDesc,
+					read: (settings) => settings.capture.defaultType,
+					write: (settings, value) => {
+						settings.capture.defaultType = value;
+					},
+				}),
+				this.toggle({
+					key: 'capture.autoCreateFolders',
+					name: STRINGS.settings.autoCreateFolders,
+					desc: STRINGS.settings.autoCreateFoldersDesc,
+					read: (settings) => settings.capture.autoCreateFolders,
+					write: (settings, value) => {
+						settings.capture.autoCreateFolders = value;
+					},
+				}),
+			],
+		};
+	}
+
+	/* -------------------------------------------------------- 3. vault health -- */
+
+	private healthSection(): SettingDefinitionGroup {
+		return {
+			type: 'group',
+			heading: STRINGS.settings.vaultHealth,
+			items: [
+				this.dropdown({
+					key: 'health.scanFrequency',
+					name: STRINGS.settings.scanFrequency,
+					desc: STRINGS.settings.scanFrequencyDesc,
+					options: optionsFor(SCAN_FREQUENCIES),
+					read: (settings) => settings.health.scanFrequency,
+					parse: (raw) => (isScanFrequency(raw) ? raw : null),
+					write: (settings, value) => {
+						settings.health.scanFrequency = value;
+					},
+				}),
+				this.toggle({
+					key: 'health.autoScanOnStartup',
+					name: STRINGS.settings.autoScanOnStartup,
+					desc: STRINGS.settings.autoScanOnStartupDesc,
+					read: (settings) => settings.health.autoScanOnStartup,
+					write: (settings, value) => {
+						settings.health.autoScanOnStartup = value;
+					},
+				}),
+				this.list({
+					key: 'health.excludedFolders',
+					name: STRINGS.settings.excludedFolders,
+					desc: STRINGS.settings.excludedFoldersDesc,
+					transform: normalizeVaultPath,
+					read: (settings) => settings.health.excludedFolders,
+					write: (settings, value) => {
+						settings.health.excludedFolders = value;
+					},
+				}),
+				this.list({
+					key: 'health.excludedTags',
+					name: STRINGS.settings.excludedTags,
+					desc: STRINGS.settings.excludedTagsDesc,
+					transform: (entry) => entry.replace(/^#+/, ''),
+					read: (settings) => settings.health.excludedTags,
+					write: (settings, value) => {
+						settings.health.excludedTags = value;
+					},
+				}),
+				this.list({
+					key: 'health.excludedExtensions',
+					name: STRINGS.settings.excludedExtensions,
+					desc: STRINGS.settings.excludedExtensionsDesc,
+					// Stored lower-case and without the dot, which is how every comparison sees them.
+					transform: (entry) => entry.replace(/^\.+/, '').toLowerCase(),
+					read: (settings) => settings.health.excludedExtensions,
+					write: (settings, value) => {
+						settings.health.excludedExtensions = value;
+					},
+				}),
+				this.toggle({
+					key: 'health.excludeInbox',
+					name: STRINGS.settings.excludeInbox,
+					desc: STRINGS.settings.excludeInboxDesc,
+					read: (settings) => settings.health.excludeInbox,
+					write: (settings, value) => {
+						settings.health.excludeInbox = value;
+					},
+				}),
+				this.toggle({
+					key: 'health.excludeArchived',
+					name: STRINGS.settings.excludeArchived,
+					desc: STRINGS.settings.excludeArchivedDesc,
+					read: (settings) => settings.health.excludeArchived,
+					write: (settings, value) => {
+						settings.health.excludeArchived = value;
+					},
+				}),
+				this.list({
+					key: 'health.requiredFrontmatterFields',
+					name: STRINGS.settings.requiredFields,
+					desc: STRINGS.settings.requiredFieldsDesc,
+					read: (settings) => settings.health.requiredFrontmatterFields,
+					write: (settings, value) => {
+						settings.health.requiredFrontmatterFields = value;
+					},
+				}),
+				this.number({
+					key: 'health.largeFileThresholdBytes',
+					name: STRINGS.settings.largeFileThreshold,
+					desc: STRINGS.settings.largeFileThresholdDesc,
+					range: RANGES.largeFileMb,
+					step: 0.1,
+					// Stored in bytes, shown in megabytes: nobody thinks about their vault in bytes.
+					read: (settings) => settings.health.largeFileThresholdBytes / BYTES_PER_MB,
+					write: (settings, value) => {
+						settings.health.largeFileThresholdBytes = Math.round(value * BYTES_PER_MB);
+					},
+				}),
+
+				headingRow(STRINGS.settings.detectorsHeading, STRINGS.settings.detectorsDesc),
+				...ISSUE_TYPES.map((type) => this.detectorToggle(type)),
+
+				headingRow(STRINGS.settings.scoreWeights, STRINGS.settings.scoreWeightsDesc),
+				...ISSUE_TYPES.map((type) => this.weightRow(type)),
+
+				headingRow(STRINGS.settings.ignoreListsHeading, STRINGS.settings.ignoreListsDesc),
+			],
+		};
+	}
+
+	/** One detector on/off switch. Aliased so a search for "detectors" surfaces all nine. */
+	private detectorToggle(type: IssueType): SettingDefinitionControl {
+		return this.toggle({
+			key: `health.detectors.${type}`,
+			name: STRINGS.health.types[type],
+			desc: STRINGS.health.typeDescriptions[type],
+			aliases: [STRINGS.settings.detectorsHeading],
+			read: (settings) => settings.health.detectors[type],
+			write: (settings, value) => {
+				settings.health.detectors[type] = value;
+			},
+		});
+	}
+
+	/**
+	 * Per-issue and per-category score weights, one row per issue type.
+	 *
+	 * Two numbers on one row rather than two `number` controls, which would turn nine
+	 * categories into eighteen near-identical rows and bury every other health option under
+	 * them. The row keeps its own inputs, so it is a `render` definition; the aliases put it
+	 * back into settings search under the heading it sits below.
+	 */
+	private weightRow(type: IssueType): SettingDefinitionRender {
+		const label = STRINGS.health.types[type];
+		return {
+			name: label,
+			aliases: [
+				STRINGS.settings.scoreWeights,
+				STRINGS.settings.weightPer,
+				STRINGS.settings.weightMax,
+			],
+			render: (setting: Setting): (() => void) => {
+				const weights = this.deps.settings.get().health.weights;
+				const disposers = [
+					this.weightInput(setting.controlEl, {
+						label: STRINGS.settings.weightPer,
+						name: `${label} — ${STRINGS.settings.weightPer}`,
+						value: weights[type].per,
+						apply: (settings, value) => {
+							settings.health.weights[type] = {
+								per: value,
+								max: settings.health.weights[type].max,
+							};
+						},
+					}),
+					this.weightInput(setting.controlEl, {
+						label: STRINGS.settings.weightMax,
+						name: `${label} — ${STRINGS.settings.weightMax}`,
+						value: weights[type].max,
+						apply: (settings, value) => {
+							settings.health.weights[type] = {
+								per: settings.health.weights[type].per,
+								max: value,
+							};
+						},
+					}),
+				];
+				return (): void => {
+					for (const dispose of disposers) dispose();
+				};
+			},
+		};
+	}
+
+	/**
+	 * One labelled number input for a score weight.
+	 *
+	 * @returns A disposer that detaches the listener, returned up to the `render` row so
+	 * Obsidian can unwind it when the row is torn down.
+	 */
+	private weightInput(
+		parent: HTMLElement,
 		options: {
 			label: string;
 			name: string;
 			value: number;
 			apply: (settings: JemzSettings, value: number) => void;
 		},
-	): void {
-		const wrapper = row.createEl('label');
+	): () => void {
+		const wrapper = parent.createEl('label');
 		wrapper.createSpan({ text: options.label });
 
 		const input = wrapper.createEl('input', {
@@ -602,7 +734,7 @@ export class JemzSettingTab extends PluginSettingTab {
 		// without reading back through the store.
 		let accepted = options.value;
 
-		this.listen(input, 'change', () => {
+		const onChange = (): void => {
 			const parsed = parseNumberInRange(input.value, RANGES.weight);
 			// Garbage leaves the stored weight alone and puts the last good value back, so the
 			// field never disagrees with what a scan will actually use.
@@ -613,47 +745,49 @@ export class JemzSettingTab extends PluginSettingTab {
 			accepted = parsed;
 			input.value = String(parsed);
 			void this.persist((settings) => options.apply(settings, parsed), true);
-		});
+		};
+
+		input.addEventListener('change', onChange);
+		return (): void => input.removeEventListener('change', onChange);
 	}
 
-	private renderIgnoreListsSection(parent: HTMLElement): void {
-		new Setting(parent)
-			.setName(STRINGS.settings.ignoreListsHeading)
-			.setDesc(STRINGS.settings.ignoreListsDesc)
-			.setHeading();
-
-		this.ignoreListEl = parent.createDiv();
-		this.renderIgnoreLists();
-	}
-
-	/** Redraw the ignore lists in place, so clearing one does not rebuild the whole tab. */
-	private renderIgnoreLists(): void {
-		const container = this.ignoreListEl;
-		if (!container) return;
-		container.empty();
-
+	/**
+	 * Issues the user chose to ignore, one row per issue type that has any.
+	 *
+	 * A `list` rather than more group items: this is a collection of entries the user removes,
+	 * which is exactly what {@link SettingDefinitionList} is for, and it brings its own empty
+	 * state. Lists cannot nest inside a group (`SettingGroupItem` admits only settings and
+	 * pages), so it sits at the top level directly after the Vault health section, under the
+	 * heading row that section ends with. `onDelete` is deliberately unused — it removes one
+	 * entry, whereas the affordance here empties a whole category, so each row keeps its
+	 * explicit Clear button.
+	 */
+	private ignoreListSection(): SettingDefinitionList {
 		const counts = this.deps.health.ignoredCounts();
 		const active = ISSUE_TYPES.filter((type) => counts[type] > 0);
-		if (active.length === 0) {
-			renderInlineEmpty(container, STRINGS.settings.ignoredItems(0));
-			return;
-		}
 
-		for (const type of active) {
-			new Setting(container)
-				.setName(STRINGS.health.types[type])
-				.setDesc(STRINGS.settings.ignoredItems(counts[type]))
-				.addButton((button) => {
-					button.setButtonText(STRINGS.settings.clearIgnored);
-					button.onClick(() => void this.clearIgnored(type));
-				});
-		}
+		return {
+			type: 'list',
+			emptyState: STRINGS.settings.ignoredItems(0),
+			items: active.map((type) => ({
+				name: STRINGS.health.types[type],
+				desc: STRINGS.settings.ignoredItems(counts[type]),
+				aliases: [STRINGS.settings.ignoreListsHeading],
+				render: (setting: Setting): void => {
+					setting.addButton((button) => {
+						button.setButtonText(STRINGS.settings.clearIgnored);
+						button.onClick(() => void this.clearIgnored(type));
+					});
+				},
+			})),
+		};
 	}
 
 	private async clearIgnored(type: IssueType): Promise<void> {
 		try {
 			await this.deps.health.clearIgnored(type);
-			this.renderIgnoreLists();
+			// The list has one row fewer, which is a change of shape rather than of value.
+			this.update();
 		} catch (error) {
 			this.deps.logger.error(`Could not clear the ignore list for "${type}"`, error);
 			new Notice(STRINGS.errors.unexpected);
@@ -662,85 +796,92 @@ export class JemzSettingTab extends PluginSettingTab {
 
 	/* ----------------------------------------------------- 4. smart retrieval -- */
 
-	private renderSmartRetrieval(parent: HTMLElement): void {
-		new Setting(parent).setName(STRINGS.settings.smartRetrieval).setHeading();
-		const { retrieval } = this.deps.settings.get();
-
-		this.addNumber(parent, {
-			name: STRINGS.settings.staleThreshold,
-			desc: STRINGS.settings.staleThresholdDesc,
-			value: retrieval.staleThresholdDays,
-			range: RANGES.staleDays,
-			apply: (settings, value) => {
-				settings.retrieval.staleThresholdDays = value;
-			},
-		});
-
-		new Setting(parent)
-			.setName(STRINGS.settings.fuzzySensitivity)
-			.setDesc(STRINGS.settings.fuzzySensitivityDesc)
-			.addSlider((slider) => {
-				slider.setLimits(RANGES.fuzzy.min, RANGES.fuzzy.max, 0.05);
-				slider.setValue(retrieval.fuzzySensitivity);
-				slider.setDynamicTooltip();
-				slider.onChange((value) => {
-					const parsed = parseNumberInRange(String(value), RANGES.fuzzy);
-					if (parsed === null) return;
-					// Dragging fires per step, so this write is coalesced rather than immediate.
-					void this.persist((settings) => {
-						settings.retrieval.fuzzySensitivity = parsed;
-					});
-				});
-			});
-
-		this.addNumber(parent, {
-			name: STRINGS.settings.resultsPerPage,
-			desc: STRINGS.settings.resultsPerPageDesc,
-			value: retrieval.resultsPerPage,
-			range: RANGES.resultsPerPage,
-			apply: (settings, value) => {
-				settings.retrieval.resultsPerPage = value;
-			},
-		});
-
-		this.addToggle(parent, {
-			name: STRINGS.settings.excludeArchivedFromViews,
-			desc: STRINGS.settings.excludeArchivedFromViewsDesc,
-			value: retrieval.excludeArchivedFromViews,
-			apply: (settings, value) => {
-				settings.retrieval.excludeArchivedFromViews = value;
-			},
-		});
+	private retrievalSection(): SettingDefinitionGroup {
+		return {
+			type: 'group',
+			heading: STRINGS.settings.smartRetrieval,
+			items: [
+				this.number({
+					key: 'retrieval.staleThresholdDays',
+					name: STRINGS.settings.staleThreshold,
+					desc: STRINGS.settings.staleThresholdDesc,
+					range: RANGES.staleDays,
+					read: (settings) => settings.retrieval.staleThresholdDays,
+					write: (settings, value) => {
+						settings.retrieval.staleThresholdDays = value;
+					},
+				}),
+				this.slider({
+					key: 'retrieval.fuzzySensitivity',
+					name: STRINGS.settings.fuzzySensitivity,
+					desc: STRINGS.settings.fuzzySensitivityDesc,
+					range: RANGES.fuzzy,
+					step: 0.05,
+					read: (settings) => settings.retrieval.fuzzySensitivity,
+					write: (settings, value) => {
+						settings.retrieval.fuzzySensitivity = value;
+					},
+				}),
+				this.number({
+					key: 'retrieval.resultsPerPage',
+					name: STRINGS.settings.resultsPerPage,
+					desc: STRINGS.settings.resultsPerPageDesc,
+					range: RANGES.resultsPerPage,
+					read: (settings) => settings.retrieval.resultsPerPage,
+					write: (settings, value) => {
+						settings.retrieval.resultsPerPage = value;
+					},
+				}),
+				this.toggle({
+					key: 'retrieval.excludeArchivedFromViews',
+					name: STRINGS.settings.excludeArchivedFromViews,
+					desc: STRINGS.settings.excludeArchivedFromViewsDesc,
+					read: (settings) => settings.retrieval.excludeArchivedFromViews,
+					write: (settings, value) => {
+						settings.retrieval.excludeArchivedFromViews = value;
+					},
+				}),
+			],
+		};
 	}
 
 	/* ----------------------------------------------------------- 5. analytics -- */
 
-	private renderAnalytics(parent: HTMLElement): void {
-		new Setting(parent).setName(STRINGS.settings.analytics).setHeading();
-
-		// Read live rather than from a captured copy: this toggle is the promise the privacy
-		// copy makes, and it must always show what is actually stored.
-		this.addToggle(parent, {
-			name: STRINGS.settings.analyticsEnabled,
-			desc: STRINGS.settings.analyticsEnabledDesc,
-			value: this.deps.settings.get().analytics.enabled,
-			apply: (settings, value) => {
-				settings.analytics.enabled = value;
-			},
-		});
-
-		new Setting(parent).setName(STRINGS.settings.analyticsView).addButton((button) => {
-			button.setButtonText(STRINGS.common.details);
-			button.onClick(() => {
-				new AnalyticsDataModal(this.app, this.deps.analytics.snapshot()).open();
-			});
-		});
-
-		new Setting(parent).setName(STRINGS.settings.analyticsDelete).addButton((button) => {
-			button.setButtonText(STRINGS.common.delete);
-			button.setWarning();
-			button.onClick(() => void this.deleteAnalytics());
-		});
+	private analyticsSection(): SettingDefinitionGroup {
+		return {
+			type: 'group',
+			heading: STRINGS.settings.analytics,
+			items: [
+				// Read live rather than from a captured copy: this toggle is the promise the privacy
+				// copy makes, and it must always show what is actually stored.
+				this.toggle({
+					key: 'analytics.enabled',
+					name: STRINGS.settings.analyticsEnabled,
+					desc: STRINGS.settings.analyticsEnabledDesc,
+					read: (settings) => settings.analytics.enabled,
+					write: (settings, value) => {
+						settings.analytics.enabled = value;
+					},
+				}),
+				// Opening a read-only report is the whole row's purpose, so the row is the control.
+				{
+					name: STRINGS.settings.analyticsView,
+					action: (): void => {
+						new AnalyticsDataModal(this.app, this.deps.analytics.snapshot()).open();
+					},
+				},
+				{
+					name: STRINGS.settings.analyticsDelete,
+					render: (setting: Setting): void => {
+						setting.addButton((button) => {
+							button.setButtonText(STRINGS.common.delete);
+							button.setDestructive();
+							button.onClick(() => void this.deleteAnalytics());
+						});
+					},
+				},
+			],
+		};
 	}
 
 	private async deleteAnalytics(): Promise<void> {
@@ -755,57 +896,71 @@ export class JemzSettingTab extends PluginSettingTab {
 
 	/* --------------------------------------------------------------- 6. about -- */
 
-	private renderAbout(parent: HTMLElement): void {
-		new Setting(parent).setName(STRINGS.settings.about).setHeading();
+	private aboutSection(): SettingDefinitionGroup {
+		return {
+			type: 'group',
+			heading: STRINGS.settings.about,
+			items: [
+				{ name: STRINGS.settings.aboutVersion, desc: this.hostPlugin.manifest.version },
+				linkRow(STRINGS.settings.aboutRepository, LINKS.repository),
+				linkRow(STRINGS.settings.aboutIssues, LINKS.issues),
+				linkRow(STRINGS.settings.aboutChangelog, LINKS.changelog),
 
-		new Setting(parent)
-			.setName(STRINGS.settings.aboutVersion)
-			.setDesc(this.hostPlugin.manifest.version);
+				headingRow(STRINGS.settings.actionLogHeading, STRINGS.settings.actionLogDesc),
+				{
+					name: STRINGS.settings.actionLogClear,
+					render: (setting: Setting): void => {
+						setting.addButton((button) => {
+							button.setButtonText(STRINGS.settings.actionLogClear);
+							button.onClick(() => void this.clearActionLog());
+						});
+					},
+				},
+				this.actionLogRow(),
 
-		this.addLink(parent, STRINGS.settings.aboutRepository, LINKS.repository);
-		this.addLink(parent, STRINGS.settings.aboutIssues, LINKS.issues);
-		this.addLink(parent, STRINGS.settings.aboutChangelog, LINKS.changelog);
-
-		this.renderActionLog(parent);
-
-		new Setting(parent)
-			.setName(STRINGS.commands.restoreLastBackup)
-			.setDesc(STRINGS.preview.restoreHint)
-			.addButton((button) => {
-				button.setButtonText(STRINGS.commands.restoreLastBackup);
-				button.onClick(() => void this.restoreLatestBackup(button));
-			});
-
-		new Setting(parent)
-			.setName(STRINGS.settings.resetSettings)
-			.setDesc(STRINGS.settings.resetSettingsDesc)
-			.addButton((button) => {
-				button.setButtonText(STRINGS.settings.resetSettings);
-				button.setWarning();
-				button.onClick(() => void this.resetSettings());
-			});
+				{
+					name: STRINGS.commands.restoreLastBackup,
+					desc: STRINGS.preview.restoreHint,
+					render: (setting: Setting): void => {
+						setting.addButton((button) => {
+							button.setButtonText(STRINGS.commands.restoreLastBackup);
+							button.onClick(() => void this.restoreLatestBackup(button));
+						});
+					},
+				},
+				{
+					name: STRINGS.settings.resetSettings,
+					desc: STRINGS.settings.resetSettingsDesc,
+					render: (setting: Setting): void => {
+						setting.addButton((button) => {
+							button.setButtonText(STRINGS.settings.resetSettings);
+							// Destructive and the row's primary action: it is the only button here.
+							button.setDestructive().setCta();
+							button.onClick(() => void this.resetSettings());
+						});
+					},
+				},
+			],
+		};
 	}
 
-	/** A real anchor, so the URL can be copied, middle-clicked, or opened in a browser. */
-	private addLink(parent: HTMLElement, name: string, url: string): void {
-		const setting = new Setting(parent).setName(name);
-		const anchor = setting.controlEl.createEl('a', { text: url, href: url });
-		anchor.setAttrs({ target: '_blank', rel: 'noopener' });
-	}
-
-	private renderActionLog(parent: HTMLElement): void {
-		new Setting(parent)
-			.setName(STRINGS.settings.actionLogHeading)
-			.setDesc(STRINGS.settings.actionLogDesc)
-			.setHeading();
-
-		new Setting(parent).setName(STRINGS.settings.actionLogClear).addButton((button) => {
-			button.setButtonText(STRINGS.settings.actionLogClear);
-			button.onClick(() => void this.clearActionLog());
-		});
-
-		this.actionLogEl = parent.createDiv({ cls: 'jva-action-log' });
-		this.renderActionLogEntries();
+	/**
+	 * The rolling action log.
+	 *
+	 * The log is a block, not a control: it is a scrolling list a hundred entries deep. The
+	 * row's own info column is cleared and used as its host, because the heading row directly
+	 * above already names it and the entries need the width more than a repeated title. It is
+	 * excluded from settings search for the same reason — the heading above carries the terms.
+	 */
+	private actionLogRow(): SettingDefinitionRender {
+		return {
+			name: STRINGS.settings.actionLogHeading,
+			searchable: false,
+			render: (setting: Setting): void => {
+				setting.infoEl.empty();
+				this.renderActionLogEntries(setting.infoEl.createDiv({ cls: 'jva-action-log' }));
+			},
+		};
 	}
 
 	/**
@@ -814,11 +969,7 @@ export class JemzSettingTab extends PluginSettingTab {
 	 * Wrapped in its own try/catch because `data.json` is hand-editable: one entry with a
 	 * broken timestamp must not take the entire settings screen down with it.
 	 */
-	private renderActionLogEntries(): void {
-		const container = this.actionLogEl;
-		if (!container) return;
-		container.empty();
-
+	private renderActionLogEntries(container: HTMLElement): void {
 		try {
 			const entries = this.deps.actionLog.recent(MAX_ACTION_LOG_ENTRIES);
 			if (entries.length === 0) {
@@ -854,7 +1005,7 @@ export class JemzSettingTab extends PluginSettingTab {
 			renderErrorState(container, {
 				title: STRINGS.errors.unexpected,
 				retryLabel: STRINGS.common.retry,
-				onRetry: (): void => this.renderActionLogEntries(),
+				onRetry: (): void => this.update(),
 			});
 		}
 	}
@@ -863,7 +1014,8 @@ export class JemzSettingTab extends PluginSettingTab {
 		try {
 			await this.deps.actionLog.clear();
 			new Notice(STRINGS.settings.actionLogCleared);
-			this.renderActionLogEntries();
+			// The log row's contents come from the definitions, so the tab redraws itself.
+			this.update();
 		} catch (error) {
 			this.deps.logger.error('Could not clear the action log', error);
 			new Notice(STRINGS.errors.unexpected);
@@ -931,35 +1083,75 @@ export class JemzSettingTab extends PluginSettingTab {
 			await this.deps.settings.reset();
 			new Notice(STRINGS.settings.saved);
 			// Every control on screen now shows a stale value, so the tab is rebuilt outright.
-			this.display();
+			this.update();
 		} catch (error) {
 			this.deps.logger.error('Could not reset the settings', error);
 			new Notice(STRINGS.errors.unexpected);
 		}
 	}
 
-	/* ------------------------------------------------------ control factories -- */
+	/* --------------------------------------------------- definition factories -- */
 
-	private addToggle(
-		parent: HTMLElement,
-		options: {
-			name: string;
-			desc: string;
-			value: boolean;
-			apply: (settings: JemzSettings, value: boolean) => void;
-		},
-	): void {
-		new Setting(parent)
-			.setName(options.name)
-			.setDesc(options.desc)
-			.addToggle((toggle) => {
-				toggle.setValue(options.value);
-				toggle.onChange((value) => {
-					// A discrete choice writes through immediately: it is one disk write, and a
-					// failed one has to be reported while the user still remembers the click.
-					void this.persist((settings) => options.apply(settings, value), true);
-				});
-			});
+	private toggle(options: {
+		key: string;
+		name: string;
+		desc: string;
+		aliases?: string[];
+		read: (settings: JemzSettings) => boolean;
+		write: (settings: JemzSettings, value: boolean) => void;
+	}): SettingDefinitionControl {
+		this.bindings.set(options.key, {
+			read: options.read,
+			coerce: (raw) =>
+				typeof raw === 'boolean'
+					? (settings: JemzSettings): void => options.write(settings, raw)
+					: null,
+			immediate: true,
+		});
+
+		return {
+			name: options.name,
+			desc: options.desc,
+			aliases: options.aliases,
+			control: { type: 'toggle', key: options.key },
+		};
+	}
+
+	/**
+	 * A dropdown over a closed set of identifiers.
+	 *
+	 * `parse` narrows a candidate back to a stored identifier and returns null for anything
+	 * outside the set, which can happen if the data was hand-edited or a future version removed
+	 * an option — either way the old value stands rather than an unknown one being persisted.
+	 * The check is a real predicate rather than a lookup in `options`, because `'toString' in
+	 * options` is true for every plain object and would wave a prototype key straight through.
+	 */
+	private dropdown<T extends string>(options: {
+		key: string;
+		name: string;
+		desc?: string;
+		options: Record<string, string>;
+		read: (settings: JemzSettings) => T;
+		parse: (raw: string) => T | null;
+		write: (settings: JemzSettings, value: T) => void;
+	}): SettingDefinitionControl {
+		this.bindings.set(options.key, {
+			read: options.read,
+			coerce: (raw) => {
+				const text = asText(raw);
+				if (text === null) return null;
+				const value = options.parse(text);
+				if (value === null) return null;
+				return (settings: JemzSettings): void => options.write(settings, value);
+			},
+			immediate: true,
+		});
+
+		return {
+			name: options.name,
+			desc: options.desc,
+			control: { type: 'dropdown', key: options.key, options: options.options },
+		};
 	}
 
 	/**
@@ -968,94 +1160,167 @@ export class JemzSettingTab extends PluginSettingTab {
 	 * Empty is refused rather than stored: every caller of these values is a folder or a note
 	 * type, and an empty one silently means "the vault root" or "no type at all".
 	 */
-	private addText(
-		parent: HTMLElement,
-		options: {
-			name: string;
-			desc: string;
-			value: string;
-			transform?: (value: string) => string;
-			apply: (settings: JemzSettings, value: string) => void;
-		},
-	): void {
-		new Setting(parent)
-			.setName(options.name)
-			.setDesc(options.desc)
-			.addText((text) => {
-				text.setValue(options.value);
-				text.onChange((raw) => {
-					const transform = options.transform ?? ((value: string): string => value);
-					const value = transform(raw.trim());
-					if (value.length === 0) return;
-					void this.persist((settings) => options.apply(settings, value));
-				});
-			});
+	private text(options: {
+		key: string;
+		name: string;
+		desc: string;
+		transform?: (value: string) => string;
+		read: (settings: JemzSettings) => string;
+		write: (settings: JemzSettings, value: string) => void;
+	}): SettingDefinitionControl {
+		this.bindings.set(options.key, {
+			read: options.read,
+			coerce: (raw) => {
+				const text = asText(raw);
+				if (text === null) return null;
+				const transform = options.transform ?? ((value: string): string => value);
+				const value = transform(text.trim());
+				if (value.length === 0) return null;
+				return (settings: JemzSettings): void => options.write(settings, value);
+			},
+			immediate: false,
+		});
+
+		return {
+			name: options.name,
+			desc: options.desc,
+			control: {
+				type: 'text',
+				key: options.key,
+				defaultValue: options.read(this.deps.settings.get()),
+			},
+		};
 	}
 
-	private addList(
-		parent: HTMLElement,
-		options: {
-			name: string;
-			desc: string;
-			value: readonly string[];
-			transform?: (entry: string) => string;
-			apply: (settings: JemzSettings, value: string[]) => void;
-		},
-	): void {
-		new Setting(parent)
-			.setName(options.name)
-			.setDesc(options.desc)
-			.addText((text) => {
-				text.setValue(formatCommaList(options.value));
-				text.onChange((raw) => {
-					const entries = parseCommaList(raw, options.transform);
-					void this.persist((settings) => options.apply(settings, entries));
-				});
-			});
+	/** A comma separated field over a stored array. */
+	private list(options: {
+		key: string;
+		name: string;
+		desc: string;
+		transform?: (entry: string) => string;
+		read: (settings: JemzSettings) => readonly string[];
+		write: (settings: JemzSettings, value: string[]) => void;
+	}): SettingDefinitionControl {
+		const read = (settings: JemzSettings): string => formatCommaList(options.read(settings));
+
+		this.bindings.set(options.key, {
+			read,
+			coerce: (raw) => {
+				const text = asText(raw);
+				if (text === null) return null;
+				const entries = parseCommaList(text, options.transform);
+				return (settings: JemzSettings): void => options.write(settings, entries);
+			},
+			immediate: false,
+		});
+
+		return {
+			name: options.name,
+			desc: options.desc,
+			control: {
+				type: 'text',
+				key: options.key,
+				defaultValue: read(this.deps.settings.get()),
+			},
+		};
 	}
 
-	private addNumber(
-		parent: HTMLElement,
-		options: {
-			name: string;
-			desc: string;
-			value: number;
-			range: NumericRange;
-			step?: string;
-			apply: (settings: JemzSettings, value: number) => void;
-		},
-	): void {
-		new Setting(parent)
-			.setName(options.name)
-			.setDesc(options.desc)
-			.addText((text) => {
-				text.setValue(String(options.value));
-				// A number input brings up the numeric keypad on mobile and gives the browser
-				// its own guard rails before this code ever sees the value.
-				text.inputEl.setAttrs({
-					type: 'number',
-					min: String(options.range.min),
-					max: String(options.range.max),
-					step: options.step ?? (options.range.integer === true ? '1' : 'any'),
-				});
-				text.onChange((raw) => {
-					const parsed = parseNumberInRange(raw, options.range);
-					// Nothing is stored for unparseable text: the previous value stays, and the
-					// field corrects itself the next time the tab is opened.
-					if (parsed === null) return;
-					void this.persist((settings) => options.apply(settings, parsed));
-				});
-			});
+	/**
+	 * A numeric field.
+	 *
+	 * `defaultValue` is the value currently in the store rather than a constant, because the
+	 * number control falls back to it when the typed text cannot be parsed — which makes
+	 * "abc" leave the setting exactly as it was, the behaviour this screen has always had.
+	 */
+	private number(options: {
+		key: string;
+		name: string;
+		desc: string;
+		range: NumericRange;
+		step?: number;
+		read: (settings: JemzSettings) => number;
+		write: (settings: JemzSettings, value: number) => void;
+	}): SettingDefinitionControl {
+		this.bindings.set(options.key, {
+			read: options.read,
+			coerce: (raw) => {
+				const text = asText(raw);
+				if (text === null) return null;
+				const parsed = parseNumberInRange(text, options.range);
+				// Nothing is stored for unparseable text: the previous value stays, and the
+				// field corrects itself the next time the tab is rendered.
+				if (parsed === null) return null;
+				return (settings: JemzSettings): void => options.write(settings, parsed);
+			},
+			immediate: false,
+		});
+
+		return {
+			name: options.name,
+			desc: options.desc,
+			control: {
+				type: 'number',
+				key: options.key,
+				defaultValue: options.read(this.deps.settings.get()),
+				min: options.range.min,
+				max: options.range.max,
+				step: options.step ?? (options.range.integer === true ? 1 : 'any'),
+			},
+		};
+	}
+
+	/** A slider. Dragging fires per step, so the write stays coalesced. */
+	private slider(options: {
+		key: string;
+		name: string;
+		desc: string;
+		range: NumericRange;
+		step: number;
+		read: (settings: JemzSettings) => number;
+		write: (settings: JemzSettings, value: number) => void;
+	}): SettingDefinitionControl {
+		this.bindings.set(options.key, {
+			read: options.read,
+			coerce: (raw) => {
+				const text = asText(raw);
+				if (text === null) return null;
+				const parsed = parseNumberInRange(text, options.range);
+				if (parsed === null) return null;
+				return (settings: JemzSettings): void => options.write(settings, parsed);
+			},
+			immediate: false,
+		});
+
+		return {
+			name: options.name,
+			desc: options.desc,
+			control: {
+				type: 'slider',
+				key: options.key,
+				min: options.range.min,
+				max: options.range.max,
+				step: options.step,
+			},
+		};
 	}
 
 	/* -------------------------------------------------------------- internals -- */
 
 	/**
+	 * The control key registry, built if nothing has asked for the definitions yet.
+	 *
+	 * Obsidian always calls {@link getSettingDefinitions} before it reads a control, but a
+	 * caller that reaches straight for a value should get one rather than `undefined`.
+	 */
+	private ensureBindings(): Map<string, ControlBinding> {
+		if (this.bindings.size === 0) this.getSettingDefinitions();
+		return this.bindings;
+	}
+
+	/**
 	 * Apply a change and persist it.
 	 *
-	 * @param immediate Skip the store's write coalescing. Used for discrete controls, where
-	 * one interaction is one write and a failure must surface as a Notice; text fields and
-	 * sliders stay coalesced so a keystroke or a drag is not a disk write each.
+	 * @param immediate Skip the store's write coalescing.
 	 */
 	private async persist(
 		mutate: (settings: JemzSettings) => void,
@@ -1068,19 +1333,15 @@ export class JemzSettingTab extends PluginSettingTab {
 			new Notice(STRINGS.errors.unexpected);
 		}
 	}
+}
 
-	/** Add a DOM listener that {@link hide} will remove. */
-	private listen<K extends keyof HTMLElementEventMap>(
-		el: HTMLElement,
-		type: K,
-		handler: (event: HTMLElementEventMap[K]) => void,
-	): void {
-		el.addEventListener(type, handler as EventListener);
-		this.cleanups.push(() => el.removeEventListener(type, handler as EventListener));
-	}
-
-	/** Run and forget every registered cleanup. */
-	private teardown(): void {
-		for (const cleanup of this.cleanups.splice(0)) cleanup();
-	}
+/** A real anchor, so the URL can be copied, middle-clicked, or opened in a browser. */
+function linkRow(name: string, url: string): SettingDefinitionRender {
+	return {
+		name,
+		render: (setting: Setting): void => {
+			const anchor = setting.controlEl.createEl('a', { text: url, href: url });
+			anchor.setAttrs({ target: '_blank', rel: 'noopener' });
+		},
+	};
 }

@@ -1294,6 +1294,17 @@ export class ButtonComponent extends BaseComponent {
 		return this;
 	}
 
+	/**
+	 * The 1.13 replacement for {@link setWarning}, which is deprecated.
+	 *
+	 * Combines with {@link setCta} — `setDestructive().setCta()` is a destructive primary
+	 * action — so the two classes are additive rather than exclusive.
+	 */
+	setDestructive(): this {
+		this.buttonEl.classList.add('mod-destructive');
+		return this;
+	}
+
 	setClass(cls: string): this {
 		this.buttonEl.classList.add(cls);
 		return this;

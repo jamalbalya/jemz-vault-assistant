@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import type { App as ObsidianApp } from 'obsidian';
+import type { App as ObsidianApp, Setting as ObsidianSetting } from 'obsidian';
 import { HealthPanel } from '../../src/modules/health/health-view';
 import { RecallPanel } from '../../src/modules/retrieval/recall-view';
 import { JemzSettingTab } from '../../src/modules/settings/settings-tab';
@@ -19,7 +19,8 @@ import { LocalStateStore } from '../../src/core/local-state';
 import { LOCAL_STATE_KEYS } from '../../src/core/constants';
 import { createHarness, type Harness } from '../helpers/harness';
 import { buildVault, loadVaultFromDisk } from '../helpers/vault-fixture';
-import { openModals } from '../mocks/obsidian';
+import { Setting, openModals } from '../mocks/obsidian';
+import { STRINGS } from '../../src/core/strings';
 
 function container(): HTMLElement {
 	const el = document.createElement('div');
@@ -126,8 +127,30 @@ describe('JemzSettingTab', () => {
 			},
 		);
 
-		tab.display();
-		expect(tab.containerEl.querySelectorAll('.setting-item').length).toBeGreaterThan(20);
+		// Since 1.13 the tab is data, so "renders without throwing" means the definitions build
+		// against the real services and every custom row draws itself. Both are exercised here:
+		// a section that threw would surface as the single error row the tab falls back to.
+		const items = tab.getSettingDefinitions();
+		const leaves = items.flatMap((item) =>
+			'type' in item ? (item.type === 'page' ? [] : (item.items ?? [])) : [item],
+		);
+		expect(leaves.length).toBeGreaterThan(20);
+		expect(leaves.some((def) => def.name === STRINGS.errors.unexpected)).toBe(false);
+
+		const disposers: (() => void)[] = [];
+		for (const def of leaves) {
+			if (!('render' in def) || def.render === undefined) continue;
+			const setting = new Setting(document.createElement('div'));
+			const dispose = def.render(setting as unknown as ObsidianSetting, undefined as never);
+			if (dispose) disposers.push(dispose);
+		}
+		// Every control answers with a stored value rather than undefined.
+		for (const def of leaves) {
+			if (!('control' in def) || def.control === undefined) continue;
+			expect(tab.getControlValue(def.control.key), def.control.key).toBeDefined();
+		}
+
+		for (const dispose of disposers) dispose();
 		tab.hide();
 		expect(tab.containerEl.children.length).toBe(0);
 	});
