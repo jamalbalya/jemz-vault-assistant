@@ -507,7 +507,11 @@
 	}
 
 	.jva-health__cards {
-		grid-template-columns: repeat(auto-fill, minmax(9em, 1fr));
+		/*
+		 * Two columns on a phone. Three fits, but squeezes "Unused attachments" and
+		 * "Corrupted frontmatter" onto three cramped lines each.
+		 */
+		grid-template-columns: repeat(auto-fill, minmax(10.5em, 1fr));
 		padding: var(--size-4-2);
 		gap: var(--size-2-1);
 	}
