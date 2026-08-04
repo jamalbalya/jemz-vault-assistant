@@ -180,6 +180,23 @@ on top:
 
 ## Mobile
 
+**Setup (iOS).** Obsidian for iOS only opens vaults inside its own iCloud container, so copy
+the fixture there rather than pointing it at a folder on disk:
+
+```bash
+rsync -a test-vault/ \
+  ~/Library/Mobile\ Documents/iCloud~md~obsidian/Documents/jemz-test-vault/
+```
+
+The copy already includes `.obsidian/plugins/jemz-vault-assistant/` with the plugin enabled,
+so nothing needs installing on the phone. Wait for iCloud to finish uploading
+(`find . -name '*.icloud'` returning nothing means everything is materialised), then open
+Obsidian on the phone and pick **jemz-test-vault**. The same numbers as desktop apply:
+49 issues, health 87, inbox 10.
+
+Note that the welcome tour is stored per device, so it appears again on the phone — which is
+the intended behaviour and worth confirming.
+
 |     | Check                                                                       |
 | --- | --------------------------------------------------------------------------- |
 | ☐   | Plugin loads with no Node.js errors in the console                          |
