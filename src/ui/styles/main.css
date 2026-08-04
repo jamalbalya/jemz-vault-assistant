@@ -18,6 +18,14 @@
 	height: 100%;
 	overflow: hidden;
 	font-size: var(--font-ui-small);
+	/*
+	 * The dashboard normally lives in a sidebar, so its own width — not the window's — is
+	 * what decides whether a row has space for a title and its actions side by side. Every
+	 * narrow-layout rule below is therefore a container query; the viewport media query at
+	 * the end of this file handles genuine phone screens on top.
+	 */
+	container-type: inline-size;
+	container-name: jva-panel;
 }
 
 .jva-scroll {
@@ -157,6 +165,12 @@
 .jva-list-item {
 	display: flex;
 	align-items: flex-start;
+	/*
+	 * Rows must survive a narrow container, not just a narrow window. The dashboard usually
+	 * lives in the right sidebar, so the viewport stays wide while the panel is ~300px —
+	 * without wrapping, the action buttons win the space and squeeze the title to a sliver.
+	 */
+	flex-wrap: wrap;
 	gap: var(--size-4-2);
 	padding: var(--size-4-2);
 	border: 1px solid var(--background-modifier-border);
@@ -175,7 +189,8 @@
 }
 
 .jva-list-item__main {
-	flex: 1 1 auto;
+	/* A real basis, so the title keeps its width instead of collapsing to zero. */
+	flex: 1 1 14em;
 	min-width: 0;
 	display: flex;
 	flex-direction: column;
@@ -460,6 +475,74 @@
 .jva-tag-input__suggestion:hover,
 .jva-tag-input__suggestion.is-active {
 	background-color: var(--background-modifier-hover);
+}
+
+/* ------------------------------------------------------- narrow containers -- */
+
+/*
+ * Applies whenever the panel itself is narrow, which is the common case in the right
+ * sidebar regardless of how wide the window is.
+ */
+@container jva-panel (max-width: 460px) {
+	.jva-list-item {
+		flex-direction: column;
+	}
+
+	.jva-list-item__main {
+		flex: 1 1 100%;
+		width: 100%;
+	}
+
+	.jva-list-item__actions {
+		width: 100%;
+	}
+
+	.jva-list-item__actions .jva-button {
+		flex: 1 1 auto;
+	}
+
+	.jva-health__summary {
+		flex-direction: column;
+		align-items: flex-start;
+	}
+
+	.jva-health__cards {
+		grid-template-columns: repeat(auto-fill, minmax(9em, 1fr));
+		padding: var(--size-4-2);
+		gap: var(--size-2-1);
+	}
+
+	/* At this width the category name and count carry the meaning on their own. */
+	.jva-health-card__label {
+		display: none;
+	}
+
+	.jva-find {
+		flex-direction: column;
+	}
+
+	.jva-find__sidebar {
+		flex: 0 0 auto;
+		max-height: 10em;
+		border-right: none;
+		border-bottom: 1px solid var(--background-modifier-border);
+		flex-direction: row;
+		overflow-x: auto;
+	}
+
+	.jva-find__sidebar-heading {
+		display: none;
+	}
+
+	.jva-saved-view {
+		width: auto;
+		white-space: nowrap;
+	}
+
+	.jva-filter-row {
+		flex-direction: column;
+		align-items: stretch;
+	}
 }
 
 /* ------------------------------------------------------------------- mobile -- */

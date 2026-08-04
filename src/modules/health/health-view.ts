@@ -87,15 +87,22 @@ const BAND_LABELS: Readonly<Record<'excellent' | 'good' | 'fair' | 'poor', strin
 };
 
 /** Icon per issue category, drawn only from the plugin's icon table. */
+/**
+ * One distinct icon per category.
+ *
+ * Reusing a single generic file-with-a-question-mark for four categories made the cards read
+ * as broken placeholders rather than as different problems, so each now gets a glyph that
+ * says something about the problem it represents.
+ */
 const ISSUE_ICONS: Readonly<Record<IssueType, string>> = {
 	'broken-link': ICONS.unlink,
-	'orphan-note': ICONS.unknownFile,
-	'empty-note': ICONS.unknownFile,
-	'unused-attachment': ICONS.archive,
+	'orphan-note': ICONS.orphan,
+	'empty-note': ICONS.emptyFile,
+	'unused-attachment': ICONS.attachment,
 	'duplicate-title': ICONS.copy,
 	'tag-inconsistency': ICONS.tag,
-	'missing-metadata': ICONS.unknownFile,
-	'large-file': ICONS.unknownFile,
+	'missing-metadata': ICONS.properties,
+	'large-file': ICONS.diskSpace,
 	'corrupted-frontmatter': ICONS.warning,
 };
 

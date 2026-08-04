@@ -197,6 +197,50 @@ Three tests would have passed against a stub and were rewritten rather than dele
   defaults; a regression to sharing the module-level object would have leaked one vault's
   counters into every store built afterwards.
 
+## Found by running in real Obsidian
+
+The automated suite asserts behaviour, not appearance, so these only surfaced once the plugin
+was installed into Obsidian 1.13.4 against the real `test-vault/`. All three are layout
+defects that no headless test would have caught, and all three were confirmed fixed by
+reloading and re-screenshotting.
+
+### BUG-014 — Inbox rows collapsed in the sidebar
+
+- **Severity:** High · **Module:** ui / list-item
+- **Steps:** Open the dashboard in the right sidebar and look at the Inbox tab.
+- **Expected:** Title, meta line, preview, then the action buttons.
+- **Actual:** The action buttons took the whole row and squeezed the title into an unreadable
+  sliver; the date rendered behind the buttons.
+- **Root cause:** `.jva-list-item__main` used `flex: 1 1 auto` with `min-width: 0`, so it
+  could shrink to nothing, and the stacking rules lived behind a **viewport** media query.
+  The dashboard sits in a ~300 px sidebar while the window stays wide, so that query never
+  matched.
+- **Fix:** `flex-wrap` on the row, a real `flex-basis` on the main column, and the narrow
+  layout moved into a `@container` query keyed on the panel's own width.
+
+### BUG-015 — Health category cards overlapped each other
+
+- **Severity:** High · **Module:** ui / health-view
+- **Steps:** Run a scan and open the Health tab.
+- **Expected:** A grid of cards, each with a name, a count and a one-line description.
+- **Actual:** Descriptions ran as single long lines straight across neighbouring cards, making
+  the whole grid unreadable.
+- **Root cause:** The card is a `<button>`, and Obsidian's button reset applies
+  `white-space: nowrap`. The description could not wrap, so it escaped its grid cell.
+- **Fix:** Restore `white-space: normal` on the card and its label, clamp the description to
+  two lines, and add `min-width: 0` so grid items may shrink.
+
+### BUG-016 — Issue counts clipped, and four categories shared one icon
+
+- **Severity:** Medium · **Module:** ui / health-view
+- **Steps:** Look at the Unused attachments and Corrupted frontmatter cards.
+- **Actual:** Their counts were pushed outside the card and hidden by `overflow: hidden`, and
+  orphan/empty/missing-metadata/large-file all used `file-question`, which renders as a
+  document with a question mark — so four of nine cards looked like broken placeholders.
+- **Fix:** The count never shrinks or wraps its digits, and the header row wraps so a long
+  category name pushes the count onto its own line instead of off the card. Each category now
+  has a distinct icon (`file`, `file-minus`, `paperclip`, `list`, `hard-drive`).
+
 ## Mock fidelity defects
 
 The mock is the foundation every integration count rests on, so a wrong mock is a wrong test

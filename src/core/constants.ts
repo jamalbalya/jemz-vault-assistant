@@ -34,6 +34,12 @@ export const ICONS = {
 	warning: 'alert-triangle',
 	success: 'check-circle',
 	unknownFile: 'file-question',
+	/* Long-standing Lucide names, so they resolve on every Obsidian version we support. */
+	orphan: 'file',
+	emptyFile: 'file-minus',
+	attachment: 'paperclip',
+	properties: 'list',
+	diskSpace: 'hard-drive',
 	unlink: 'unlink',
 	tag: 'tag',
 	calendar: 'calendar',

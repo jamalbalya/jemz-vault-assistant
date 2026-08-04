@@ -76,7 +76,7 @@
 
 .jva-health__cards {
 	display: grid;
-	grid-template-columns: repeat(auto-fill, minmax(11em, 1fr));
+	grid-template-columns: repeat(auto-fill, minmax(12em, 1fr));
 	gap: var(--size-2-2);
 	padding: var(--size-4-3);
 }
@@ -91,6 +91,25 @@
 	background-color: var(--background-primary);
 	cursor: pointer;
 	text-align: left;
+	/*
+	 * A grid item defaults to min-width:auto, so a long description refuses to shrink and
+	 * spills over its neighbours instead of wrapping. Both properties are needed: one lets
+	 * the cell shrink, the other stops any single long word from re-inflating it.
+	 */
+	min-width: 0;
+	overflow-wrap: anywhere;
+	/*
+	 * The card is a <button>, and Obsidian's button reset sets `white-space: nowrap` and its
+	 * own font. Without restoring normal wrapping the description renders as one long line
+	 * that escapes the card and overlaps the neighbouring cards.
+	 */
+	white-space: normal;
+	overflow: hidden;
+	font-family: inherit;
+	font-size: inherit;
+	line-height: var(--line-height-tight);
+	color: inherit;
+	height: auto;
 }
 
 .jva-health-card:hover,
@@ -109,8 +128,31 @@
 
 .jva-health-card__top {
 	display: flex;
-	align-items: center;
+	align-items: baseline;
 	gap: var(--size-2-2);
+	min-width: 0;
+	/*
+	 * The count is the whole point of the card, so it must never be clipped. Wrapping lets it
+	 * drop onto its own line when the category name is long, instead of being pushed past the
+	 * card's edge and hidden by `overflow: hidden`.
+	 */
+	flex-wrap: wrap;
+	row-gap: 0;
+}
+
+/* The icon keeps its size; the name absorbs the slack and truncates if it must. */
+.jva-health-card__top > .jva-list-item__icon {
+	flex: 0 0 auto;
+}
+
+/*
+ * The name wraps onto a second line rather than truncating. "Corrupted front…" reads worse
+ * than two short lines, and truncation was also pushing the count out of the card.
+ */
+.jva-health-card__top > span:not(.jva-health-card__count):not(.jva-list-item__icon) {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow-wrap: anywhere;
 }
 
 .jva-health-card__count {
@@ -118,11 +160,22 @@
 	font-weight: var(--font-bold);
 	font-variant-numeric: tabular-nums;
 	margin-left: auto;
+	/* The number is the point of the card: it never shrinks, wraps, or gets clipped. */
+	flex: 0 0 auto;
+	white-space: nowrap;
+	padding-left: var(--size-2-1);
 }
 
 .jva-health-card__label {
 	font-size: var(--font-ui-smaller);
 	color: var(--text-muted);
+	white-space: normal;
+	/* Two lines is enough to explain a category; more would push the grid out of shape. */
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	line-clamp: 2;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
 }
 
 .jva-health__issues {

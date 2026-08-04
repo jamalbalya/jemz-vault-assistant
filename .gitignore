@@ -30,3 +30,6 @@ jemz-vault-assistant.md
 jemz-vault-assistant-addendum.md
 PLAN.md
 TESTING_GUIDE.md
+
+# Local Obsidian install state for the test vault
+test-vault/.obsidian
