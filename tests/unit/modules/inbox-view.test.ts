@@ -115,7 +115,13 @@ async function mountPanel(
 		bus.emit('index-updated', { changed: [file.path] });
 	});
 
-	const actions = new InboxActions({ app: asApp(app), inbox, logger });
+	const actions = new InboxActions({
+		app: asApp(app),
+		inbox,
+		logger,
+		// Sourced from the index in production; the fixture's tags are enough here.
+		tagSuggestions: () => Array.from(index.tagCounts().keys()).sort(),
+	});
 
 	const harness: Harness = {
 		app,

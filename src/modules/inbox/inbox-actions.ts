@@ -11,7 +11,7 @@
  * tallies outcomes for its session summary and a thrown error would abort the session.
  */
 
-import { Notice, getAllTags, type App, type TFile } from 'obsidian';
+import { Notice, type App, type TFile } from 'obsidian';
 import { STRINGS } from '../../core/strings';
 import { errorMessage, type Logger } from '../../core/logger';
 import { normalizeTag } from '../../utils/string';
@@ -44,10 +44,12 @@ export interface InboxActionsDeps {
 	/**
 	 * Existing vault tags offered by the tag prompt's autocomplete.
 	 *
-	 * Injectable so a caller that already maintains a tag index (the health module does) can
-	 * hand its counts over instead of paying for a second walk of the metadata cache.
+	 * Required rather than optional: the vault index already maintains tag counts, so the
+	 * only alternative was walking every markdown file a second time to rebuild what was
+	 * already in memory. Taking it as a dependency keeps whole-vault enumeration confined to
+	 * the index, which is the single place that legitimately needs it.
 	 */
-	tagSuggestions?: () => readonly string[];
+	tagSuggestions: () => readonly string[];
 }
 
 /** A short prompt collecting one or more tags, with autocomplete over the vault's tags. */
@@ -227,29 +229,9 @@ export class InboxActions {
 		}
 	}
 
-	/**
-	 * Tags to offer in the prompt, most used first.
-	 *
-	 * Falls back to walking the metadata cache, which touches no disk and is therefore cheap
-	 * enough to run when the prompt opens rather than being kept warm.
-	 */
+	/** Tags to offer in the prompt, most used first. */
 	private tagSuggestions(): readonly string[] {
-		if (this.deps.tagSuggestions) return this.deps.tagSuggestions();
-
-		const counts = new Map<string, number>();
-		for (const file of this.deps.app.vault.getMarkdownFiles()) {
-			const cache = this.deps.app.metadataCache.getFileCache(file);
-			if (!cache) continue;
-			for (const raw of getAllTags(cache) ?? []) {
-				const tag = normalizeTag(raw);
-				if (tag.length === 0) continue;
-				counts.set(tag, (counts.get(tag) ?? 0) + 1);
-			}
-		}
-		return Array.from(counts.entries())
-			.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-			.slice(0, MAX_TAG_SUGGESTIONS)
-			.map((entry) => entry[0]);
+		return this.deps.tagSuggestions().slice(0, MAX_TAG_SUGGESTIONS);
 	}
 }
 
