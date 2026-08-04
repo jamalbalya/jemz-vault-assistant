@@ -65,9 +65,23 @@ jobs:
                       main.js
                       styles.css
 
-            - name: Upload release assets
+            - name: Publish release assets
               env:
                   GH_TOKEN: ${{ github.token }}
+                  TAG: ${{ steps.tag.outputs.value }}
               run: |
-                  gh release upload "${{ steps.tag.outputs.value }}" \
-                    main.js manifest.json styles.css --clobber
+                  # `gh release upload` fails when the release does not exist yet, which is
+                  # the normal case for a freshly pushed tag. Create it first, then upload.
+                  if gh release view "$TAG" >/dev/null 2>&1; then
+                    echo "Release $TAG exists; replacing its assets."
+                  else
+                    echo "Creating release $TAG."
+                    awk -v tag="$TAG" '
+                      $0 ~ "^## \\[" tag "\\]" { capture = 1; next }
+                      capture && /^## / { exit }
+                      capture { print }
+                    ' CHANGELOG.md > /tmp/notes.md
+                    [ -s /tmp/notes.md ] || echo "Release $TAG" > /tmp/notes.md
+                    gh release create "$TAG" --title "$TAG" --notes-file /tmp/notes.md
+                  fi
+                  gh release upload "$TAG" main.js manifest.json styles.css --clobber
