@@ -12,7 +12,7 @@
  *    `index-updated` events a sync produces cannot paint a stale page over a fresh one.
  */
 
-import { Notice, Platform, type App, type TFile } from 'obsidian';
+import { Notice, type App, type TFile } from 'obsidian';
 import type { DashboardTab } from '../../types/events';
 import type { NoteRecord } from '../../types/note';
 import { ICONS, INBOX_PREVIEW_LENGTH, TYPE_ICONS } from '../../core/constants';
@@ -338,8 +338,12 @@ export class InboxPanel implements TabPanel {
 		icon: string,
 		action: (file: TFile) => Promise<InboxActionResult>,
 	): ButtonOptions {
+		// Labelled on every platform. Touch has no hover tooltips, so icon-only buttons left
+		// eight unexplained glyphs per row on a phone — including Delete, which is not
+		// something anyone should have to guess at. The mobile stylesheet lays them out in a
+		// grid so the labels fit.
 		return {
-			...(Platform.isMobile ? {} : { label }),
+			label,
 			icon,
 			tooltip: label,
 			onClick: () => this.run(record, action),

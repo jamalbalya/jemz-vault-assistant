@@ -241,6 +241,35 @@ reloading and re-screenshotting.
   category name pushes the count onto its own line instead of off the card. Each category now
   has a distinct icon (`file`, `file-minus`, `paperclip`, `list`, `hard-drive`).
 
+## Found by running on a real iPhone
+
+Verified on an iPhone over iPhone Mirroring, against `jemz-test-vault` synced through the
+Obsidian iCloud container. Every detector figure matched the desktop exactly: health 87,
+49 issues, orphans 25, broken links 8, unused attachments 6, empty 3, tag groups 3,
+duplicates 2, missing metadata 1, corrupted frontmatter 1.
+
+Confirmed working on iOS: the welcome tour reappears (per-device state, as designed), the
+not-scanned-yet empty state, the scan itself, and the health cards in their two-column mobile
+layout with no overlap.
+
+### BUG-017 — Every inbox action was an unlabelled icon on mobile
+
+- **Severity:** High · **Module:** ui / inbox-view
+- **Steps:** Open the Inbox tab on a phone.
+- **Expected:** To be able to tell the eight per-item actions apart.
+- **Actual:** Eight bare icons per row. `actionButton` suppressed the label on mobile
+  (`...(Platform.isMobile ? {} : { label })`) and fell back to a `tooltip` — but touch has no
+  hover, so the tooltip never appears. **Delete** was among the unlabelled icons, so the most
+  destructive action in the list was also the least identifiable.
+- **Extra defect in the same place:** the buttons were a wrapping flex row, so the leftover
+  space all landed on the final line — six cramped buttons above two oversized ones.
+- **Fix:** Labels on every platform, and the mobile stylesheet lays the actions out as a
+  uniform three-column grid. Verified at 390 px: `Open / Process / Task`, `Move / Tag / Link`,
+  `Archive / Delete`, all legible, all at least 44 px tall.
+- **Why no test caught it:** the automated suite asserts that a button exists and that
+  pressing it performs the action; whether its label is rendered on a 390 px screen is a
+  question only a layout engine can answer.
+
 ## Mock fidelity defects
 
 The mock is the foundation every integration count rests on, so a wrong mock is a wrong test

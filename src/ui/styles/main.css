@@ -495,10 +495,28 @@
 
 	.jva-list-item__actions {
 		width: 100%;
+		/*
+		 * A uniform grid rather than a wrapping flex row. Wrapping gave six cramped buttons
+		 * on one line and two oversized ones on the next, because the leftover space all
+		 * landed on the final row.
+		 */
+		display: grid;
+		grid-template-columns: repeat(3, 1fr);
+		gap: var(--size-2-1);
 	}
 
 	.jva-list-item__actions .jva-button {
-		flex: 1 1 auto;
+		width: 100%;
+		justify-content: center;
+		gap: var(--size-2-1);
+		padding-inline: var(--size-2-1);
+	}
+
+	/* Keep the label; drop to icon-only only if the label truly cannot fit. */
+	.jva-list-item__actions .jva-button__label {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.jva-health__summary {
