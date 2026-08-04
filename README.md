@@ -127,6 +127,24 @@ View find · Search notes · Toggle status bar · Restore last fix backup
 
 ## Privacy
 
+### What the plugin reads
+
+To do its job the plugin enumerates **every file in your vault** — `vault.getFiles()` and
+friends — and reads note contents. That is unavoidable for what it offers: you cannot find
+orphan notes without knowing every note and every link, or search without reading text.
+Concretely:
+
+- **File paths and metadata** for all files, held in an in-memory index.
+- **Note contents**, read lazily — only when a health scan, a search, or a preview needs
+  them, never during startup.
+- **Attachments** are only ever checked for _references_; their bytes are never read.
+
+All of it stays on your device. There is no server, no telemetry endpoint, and no third
+party. If you would rather scope it down, Settings → Vault health lets you exclude folders,
+tags, and file types from scanning.
+
+### Everything else
+
 - No network requests. Ever, for any core feature.
 - Settings, saved views, ignore lists and the action log live in
   `.obsidian/plugins/jemz-vault-assistant/data.json`.

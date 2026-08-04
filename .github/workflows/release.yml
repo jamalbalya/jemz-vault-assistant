@@ -1,0 +1,73 @@
+name: Release
+
+# Builds the release artifacts inside GitHub Actions and signs them with build
+# provenance, so anyone can verify that the `main.js` and `styles.css` attached to a
+# release were produced from this repository at this commit — not uploaded by hand.
+#
+# Verify a downloaded asset with:
+#   gh attestation verify main.js --repo jamalbalya/jemz-vault-assistant
+
+on:
+    push:
+        tags:
+            - '[0-9]+.[0-9]+.[0-9]+'
+    workflow_dispatch:
+        inputs:
+            tag:
+                description: 'Existing tag to build and attest (e.g. 1.0.0)'
+                required: true
+                type: string
+
+permissions:
+    contents: write # attach assets to the release
+    id-token: write # request the OIDC token that signs the attestation
+    attestations: write # record the attestation against the repository
+
+jobs:
+    release:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Resolve tag
+              id: tag
+              run: echo "value=${{ inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
+
+            - uses: actions/checkout@v4
+              with:
+                  ref: ${{ steps.tag.outputs.value }}
+
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: 20
+                  cache: npm
+
+            - run: npm ci
+
+            # The artifacts are only worth signing if they came from a green build.
+            - run: npm run lint
+            - run: npm run typecheck
+            - run: npm test
+
+            - name: Build
+              run: npm run build
+
+            - name: Check the manifest matches the tag
+              run: |
+                  manifest_version=$(node -p "require('./manifest.json').version")
+                  if [ "$manifest_version" != "${{ steps.tag.outputs.value }}" ]; then
+                    echo "manifest.json says $manifest_version but the tag is ${{ steps.tag.outputs.value }}"
+                    exit 1
+                  fi
+
+            - name: Attest build provenance
+              uses: actions/attest-build-provenance@v2
+              with:
+                  subject-path: |
+                      main.js
+                      styles.css
+
+            - name: Upload release assets
+              env:
+                  GH_TOKEN: ${{ github.token }}
+              run: |
+                  gh release upload "${{ steps.tag.outputs.value }}" \
+                    main.js manifest.json styles.css --clobber
