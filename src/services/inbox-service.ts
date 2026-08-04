@@ -188,9 +188,11 @@ export class InboxService {
 	 * Deletion always goes through `vault.trash` (addendum 6.5) so the user can recover it;
 	 * the UI must have confirmed before calling this.
 	 */
-	async trash(file: TFile, useSystemTrash = false): Promise<void> {
+	async trash(file: TFile): Promise<void> {
 		await this.run(file, 'trash', async () => {
-			await this.app.vault.trash(file, useSystemTrash);
+			// Routed through FileManager so Obsidian's "Deleted files" setting decides
+			// between system trash, vault trash, or permanent deletion.
+			await this.app.fileManager.trashFile(file);
 		});
 	}
 

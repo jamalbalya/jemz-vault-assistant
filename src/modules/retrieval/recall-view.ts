@@ -1067,26 +1067,16 @@ export function groupByTarget(mentions: readonly UnlinkedMention[]): UnlinkedMen
 /**
  * Copy text to the clipboard.
  *
- * The async clipboard API is unavailable in a few older mobile webviews Obsidian still runs
- * in, so a hidden textarea and `execCommand` remain the fallback.
+ * The async clipboard API is available on every platform this plugin supports, so there is no
+ * `execCommand` fallback: it is deprecated, and keeping it around only to serve webviews we no
+ * longer target would be dead code that trips up review.
  */
 async function copyText(text: string): Promise<void> {
 	const clipboard: Clipboard | undefined = navigator.clipboard;
-	if (clipboard && typeof clipboard.writeText === 'function') {
-		await clipboard.writeText(text);
-		return;
+	if (!clipboard || typeof clipboard.writeText !== 'function') {
+		throw new Error('The clipboard is unavailable on this platform');
 	}
-
-	const helper = document.body.createEl('textarea');
-	helper.value = text;
-	helper.setAttr('aria-hidden', 'true');
-	helper.setCssStyles({ position: 'fixed', top: '-1000px', opacity: '0' });
-	try {
-		helper.select();
-		if (!document.execCommand('copy')) throw new Error('The clipboard rejected the copy');
-	} finally {
-		helper.detach();
-	}
+	await clipboard.writeText(text);
 }
 
 function asSortField(value: string): SortField | null {

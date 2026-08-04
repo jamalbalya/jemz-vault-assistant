@@ -13,13 +13,11 @@
 import { TFolder, type App, type TFile } from 'obsidian';
 import type {
 	BrokenLinkIssueData,
-	ChangeKind,
 	FixActionId,
 	FixPlan,
 	HealthIssue,
 	IssueType,
 	PlannedChange,
-	TagInconsistencyIssueData,
 } from '../../types/health';
 import type { LinkRef } from '../../types/note';
 import type { JemzSettings } from '../../types/settings';
@@ -216,7 +214,10 @@ export class FixActions {
 		for (const [path, fileIssues] of byFile) {
 			const file = this.requireFile(path);
 			const content = await this.deps.app.vault.read(file);
-			const next = this.applyLinkEdits(content, fileIssues, targetName);
+			// Apply the edits now to confirm they land. If the result is unchanged, every
+			// recorded offset was stale and the file would be listed in the preview as
+			// something that will change when it will not — so drop it from the plan.
+			if (this.applyLinkEdits(content, fileIssues, targetName) === content) continue;
 			changes.push({
 				path,
 				kind: 'modify',
@@ -228,6 +229,12 @@ export class FixActions {
 				after: targetName === null ? '(link text kept)' : `[[${targetName}]]`,
 				expectedMtime: file.stat.mtime,
 			});
+		}
+
+		if (changes.length === 0) {
+			throw new FixPlanError(
+				'Those links could not be located any more — rescan and try again.',
+			);
 		}
 
 		return {
@@ -429,7 +436,9 @@ export class FixActions {
 		return {
 			plan: this.buildPlan('trash', STRINGS.health.fixes.trash, issues, changes),
 			execute: async (change) => {
-				await this.deps.app.vault.trash(this.requireFile(change.path), false);
+				// trashFile honours the user's "Deleted files" preference (system trash,
+				// vault trash, or permanent) instead of forcing one on them.
+				await this.deps.app.fileManager.trashFile(this.requireFile(change.path));
 			},
 		};
 	}

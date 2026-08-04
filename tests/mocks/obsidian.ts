@@ -695,6 +695,17 @@ export class FileManager {
 		await this.vault.rename(file, newPath);
 	}
 
+	/**
+	 * Delete honouring the user's "Deleted files" preference.
+	 *
+	 * The real implementation routes to the system trash, the vault's `.trash`, or a
+	 * permanent delete depending on that setting; for the mock every route removes the file,
+	 * which is all any caller can observe.
+	 */
+	async trashFile(file: TAbstractFile): Promise<void> {
+		await this.vault.trash(file, false);
+	}
+
 	generateMarkdownLink(
 		file: TFile,
 		sourcePath: string,
@@ -1436,6 +1447,8 @@ export class Setting {
 
 export abstract class PluginSettingTab {
 	containerEl: HTMLElement;
+	/** Test helper: how many times {@link update} was called. */
+	updateCount = 0;
 
 	constructor(
 		readonly app: App,
@@ -1444,7 +1457,23 @@ export abstract class PluginSettingTab {
 		this.containerEl = document.createElement('div');
 	}
 
-	abstract display(): void;
+	display(): void {
+		/* overridden by tabs that still render imperatively */
+	}
+
+	/**
+	 * Re-evaluate declarative settings (Obsidian 1.13+).
+	 *
+	 * The real implementation re-runs `getSettingDefinitions()` and reconciles the DOM. The
+	 * mock records the call and re-renders, which is enough to assert that a tab refreshes
+	 * itself through `update()` rather than by calling `display()` again.
+	 */
+	update(): void {
+		this.updateCount++;
+		const tab = this as unknown as { getSettingDefinitions?: () => unknown[] };
+		if (typeof tab.getSettingDefinitions === 'function') tab.getSettingDefinitions();
+		else this.display();
+	}
 
 	hide(): void {
 		this.containerEl.empty();

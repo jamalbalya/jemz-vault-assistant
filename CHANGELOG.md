@@ -5,6 +5,40 @@ All notable changes to Jemz Vault Assistant are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] — 2026-08-04
+
+Addresses every warning and recommendation raised by the Obsidian community-plugin review.
+
+### Changed
+
+- **`minAppVersion` raised to 1.13.0.** Three of the review's findings — the declarative
+  settings API, `setDestructive`, and the `display()` deprecation — can only be resolved with
+  1.13 APIs. The plugin had no released users, so requiring the current Obsidian costs nothing
+  and clears them properly rather than suppressing them.
+- Deletion now goes through `FileManager.trashFile()` instead of `Vault.trash()`, so it
+  honours the user's own "Deleted files" preference (system trash, vault trash, or permanent)
+  rather than the plugin forcing one.
+- Settings adopt the declarative `getSettingDefinitions()` API, so every setting is reachable
+  from Obsidian's settings search.
+- Informational logging dropped to debug level; the plugin no longer writes to the console
+  during ordinary use.
+
+### Removed
+
+- The `execCommand` clipboard fallback. The async clipboard API is available everywhere the
+  plugin now runs, so the deprecated path was dead code.
+
+### Fixed
+
+- A broken-link fix batch no longer lists files whose recorded offsets have gone stale. Such a
+  file would have appeared in the preview as "will change" and then silently not changed;
+  it is now dropped from the plan, and a batch with nothing left to do says so.
+
+### Security
+
+- Release artifacts are built in GitHub Actions and signed with build provenance. Verify with
+  `gh attestation verify main.js --repo jamalbalya/jemz-vault-assistant`.
+
 ## [1.0.0] — 2026-08-04
 
 First release.

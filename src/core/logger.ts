@@ -53,7 +53,9 @@ export class Logger {
 	}
 
 	info(message: string, ...details: unknown[]): void {
-		if (this.enabled('info')) console.info(this.prefix(), message, ...details);
+		// Emitted at debug level: an informational line is not worth putting in a
+		// user's console by default, which is what Obsidian's guidance asks for.
+		if (this.enabled('info')) console.debug(this.prefix(), message, ...details);
 	}
 
 	warn(message: string, ...details: unknown[]): void {
