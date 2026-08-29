@@ -17,8 +17,32 @@
  */
 
 import type { Detector, DetectorContext, HealthIssue } from '../../../types/health';
+import type { NoteRecord } from '../../../types/note';
 import { STRINGS } from '../../../core/strings';
 import { createIssue } from '../issue';
+
+/**
+ * Whether a note is disconnected in both directions.
+ *
+ * Exported because the Find tab's Orphans view has to answer exactly the same question over
+ * a different set of records, and two copies of this rule drift: the first thing they stop
+ * agreeing on is the self-link, which reads as "has a link" to a naive length check and as
+ * "no edge" to this one. A user seeing one count in Health and another in Find has no way to
+ * tell which tab is lying.
+ *
+ * @param backlinksOf Sources linking to a path. Injected so a detector context and the vault
+ *   index can both supply it.
+ */
+export function isOrphanNote(
+	record: NoteRecord,
+	backlinksOf: (path: string) => readonly string[],
+): boolean {
+	if (record.isAttachment) return false;
+	// An unresolved link still points outward, so only a link that resolves back to this very
+	// file is discounted.
+	if (record.links.some((link) => link.resolvedPath !== record.path)) return false;
+	return !backlinksOf(record.path).some((source) => source !== record.path);
+}
 
 /**
  * Finds notes with no links in and no links out.
@@ -34,15 +58,9 @@ const orphanNotesDetector: Detector = {
 		const issues: HealthIssue[] = [];
 
 		for (const record of context.notes) {
-			if (record.isAttachment) continue;
-			// An unresolved link still points outward, so only a link that resolves back to
-			// this very file is discounted.
-			const linksOut = record.links.some((link) => link.resolvedPath !== record.path);
-			if (linksOut) continue;
-			const linksIn = context
-				.backlinksOf(record.path)
-				.some((source) => source !== record.path);
-			if (linksIn) continue;
+			// Wrapped rather than passed by reference: `backlinksOf` is a method on the
+			// context, and handing it over bare would detach it from its receiver.
+			if (!isOrphanNote(record, (path) => context.backlinksOf(path))) continue;
 
 			issues.push(
 				createIssue({

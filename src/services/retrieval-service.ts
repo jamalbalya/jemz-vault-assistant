@@ -25,6 +25,7 @@ import { previewText } from '../utils/string';
 import type { ContentIndex } from './content-index';
 import type { VaultIndex } from './vault-index';
 import { isInboxNote } from './inbox-service';
+import { isOrphanNote } from '../modules/health/detectors/orphan-notes';
 import { SearchEngine } from '../modules/retrieval/search-engine';
 import { resolveViews, viewToQuery } from '../modules/retrieval/saved-views';
 import { findOnThisDay } from '../modules/retrieval/contextual/on-this-day';
@@ -105,9 +106,13 @@ export class RetrievalService {
 				// none of them, and the user would see two different counts for one idea.
 				const settings = this.settings;
 				const inboxFolder = settings.capture.inboxFolder.trim();
+				const backlinksOf = (path: string): readonly string[] =>
+					this.deps.index.backlinksOf(path);
 				records = this.candidates().filter((record) => {
-					if (record.links.length > 0) return false;
-					if (this.deps.index.backlinksOf(record.path).length > 0) return false;
+					// Shared with the detector rather than restated, so the two tabs cannot
+					// answer differently — a note whose only link points at itself is the case
+					// a length check gets wrong.
+					if (!isOrphanNote(record, backlinksOf)) return false;
 					if (settings.health.excludeInbox && isInboxNote(record, inboxFolder)) {
 						return false;
 					}
