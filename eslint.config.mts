@@ -77,7 +77,10 @@ export default defineConfig(
 	{
 		// Tests run in Node, not in Obsidian: they legitimately read fixtures from disk,
 		// reimplement Obsidian's DOM helpers, and drive raw timers. The Obsidian-specific
-		// rules describe the plugin runtime and do not apply to them.
+		// rules describe the plugin runtime and do not apply to them. `no-tfile-tfolder-cast`
+		// is off for the same reason the `App` casts exist: `tsc` types the tests against the
+		// real declarations while vitest aliases `obsidian` to the mock, so handing a mock
+		// file to a service under test is a cast by construction, not a missed `instanceof`.
 		files: ['tests/**/*.ts', 'vitest.config.ts', 'vitest.perf.config.ts'],
 		languageOptions: {
 			globals: { ...globals.node },
@@ -100,6 +103,7 @@ export default defineConfig(
 			'obsidianmd/settings-tab/prefer-setting-definitions': 'off',
 			'obsidianmd/prefer-instanceof': 'off',
 			'obsidianmd/no-unsupported-api': 'off',
+			'obsidianmd/no-tfile-tfolder-cast': 'off',
 		},
 	},
 );

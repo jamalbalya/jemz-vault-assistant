@@ -99,6 +99,11 @@ export class VaultIndex {
 
 		this.removeFromBacklinks(file.path);
 		for (const target of record.resolvedLinks) {
+			// A note linking to itself is not an edge, exactly as in the full rebuild. Letting
+			// one through here would make a self-linked note count as linked-to until the next
+			// full pass, which is the difference between the orphan detector reporting it and
+			// silently skipping it depending on whether the file has been touched since load.
+			if (target === file.path) continue;
 			this.addBacklink(target, file.path);
 		}
 		this.refreshBacklinksFor([file.path, ...touched]);
