@@ -18,7 +18,13 @@ import type { Logger } from '../core/logger';
 import type { SettingsStore } from '../core/settings';
 import { STRINGS } from '../core/strings';
 import { backupStamp } from '../utils/date';
-import { getFolderPath, isAttachmentPath, joinPath, normalizeVaultPath } from '../utils/file';
+import {
+	getFolderPath,
+	hasTraversalSegment,
+	isAttachmentPath,
+	joinPath,
+	normalizeVaultPath,
+} from '../utils/file';
 
 /** Upper bound on same-second folder name collisions before giving up. */
 export const MAX_STAMP_ATTEMPTS = 1000;
@@ -291,8 +297,18 @@ export class BackupService {
 		await adapter.write(destination, await adapter.read(source));
 	}
 
-	/** Write one backed-up file back over its original path, recreating parent folders. */
+	/**
+	 * Write one backed-up file back over its original path, recreating parent folders.
+	 *
+	 * Both halves come out of `data.json`, so both are checked for `..` first: a manifest a
+	 * user hand edited (or a half-finished write truncated) must not be able to steer a
+	 * restore at a path outside the vault. Throwing here is what the caller wants — the file
+	 * is reported as failed alongside the ones that did come back.
+	 */
 	private async restoreOne(dir: string, path: string): Promise<void> {
+		if (hasTraversalSegment(path) || hasTraversalSegment(dir)) {
+			throw new Error(`Refusing to restore "${path}": the recorded path leaves the vault.`);
+		}
 		const adapter = this.app.vault.adapter;
 		const source = joinPath(dir, path);
 		const folder = getFolderPath(path);
@@ -344,13 +360,17 @@ export class BackupService {
 	 * recursive delete of the vault root. The backup folder itself is refused too, so one bad
 	 * manifest cannot take every other backup with it.
 	 *
+	 * A `..` segment is refused before the prefix test rather than by it: normalisation only
+	 * tidies slashes, so `<backups>/../../notes` passes `startsWith` while resolving well
+	 * outside the folder this check exists to confine the delete to.
+	 *
 	 * Failures are logged and swallowed on purpose: housekeeping that cannot delete an old
 	 * folder must never fail the fix batch that triggered it.
 	 */
 	private async removeDir(dir: string): Promise<void> {
 		const normalized = normalizeVaultPath(dir);
 		const root = this.rootDir();
-		if (!normalized.startsWith(`${root}/`)) {
+		if (hasTraversalSegment(normalized) || !normalized.startsWith(`${root}/`)) {
 			this.logger.error(
 				`Refusing to remove "${dir}": it is not inside the backup folder "${root}".`,
 			);

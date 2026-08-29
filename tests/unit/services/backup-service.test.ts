@@ -405,6 +405,25 @@ describe('BackupService.restoreLatest', () => {
 		expect(h.logger.errors.some((message) => message.includes('notes/alpha.md'))).toBe(true);
 	});
 
+	it('refuses a recorded path that climbs out of the vault', async () => {
+		const dir = (await h.service.create(['notes/alpha.md'], 'batch')) ?? '';
+		// A hand-edited manifest, with a readable source behind it so the only thing that can
+		// stop the write is the traversal check itself. `..` survives normalisation, so
+		// without that check the restore hands the adapter a path outside the vault.
+		await h.app.vault.adapter.write(`${dir}/../../outside.md`, 'payload');
+		const manifest = h.store.get().backups[0];
+		if (manifest) manifest.files = ['../../outside.md', 'notes/alpha.md'];
+		await h.app.vault.adapter.write('notes/alpha.md', 'ruined');
+
+		const result = await h.service.restoreLatest();
+
+		expect(result.failed).toEqual(['../../outside.md']);
+		expect(result.restored).toEqual(['notes/alpha.md']);
+		expect(await h.app.vault.adapter.exists('../../outside.md')).toBe(false);
+		// The file that was legitimately in the backup still comes back.
+		expect(await h.app.vault.adapter.read('notes/alpha.md')).toBe('alpha body\n');
+	});
+
 	it('reports every file as failed when the vault turned read-only', async () => {
 		await h.service.create(['notes/alpha.md'], 'batch');
 		h.app.vault.adapter.readOnly = true;
@@ -549,6 +568,35 @@ describe('BackupService pruning', () => {
 		expect(
 			h.logger.errors.filter((message) => message.includes('Refusing to remove')),
 		).toHaveLength(2);
+	});
+
+	it('refuses to delete a folder that climbs out of the backup root', async () => {
+		const h = await simpleHarness();
+		// `..` survives normalisation — it only tidies slashes — so this path passes a plain
+		// `startsWith(root)` test while resolving to the vault's own `notes` folder. The mock
+		// adapter treats paths literally and would not actually delete anything, so what is
+		// asserted is the refusal itself: on a real adapter the OS resolves the segments.
+		h.store.get().backups = [
+			...Array.from({ length: MAX_BACKUPS }, (_, i) => ({
+				dir: `${BACKUP_ROOT}/2030-01-01-00-00-0${i}`,
+				createdAt: 100 + i,
+				label: `kept ${i}`,
+				files: [],
+			})),
+			{
+				dir: `${BACKUP_ROOT}/../../../../notes`,
+				createdAt: 2,
+				label: 'traversal',
+				files: [],
+			},
+		];
+
+		await h.service.prune();
+
+		expect(
+			h.logger.errors.filter((message) => message.includes('Refusing to remove')),
+		).toHaveLength(1);
+		expect(await h.app.vault.adapter.exists('notes/alpha.md')).toBe(true);
 	});
 
 	it('refuses to delete the backup root itself', async () => {

@@ -91,6 +91,18 @@ export function isInFolder(path: string, folder: string): boolean {
 	return normalizedPath === normalizedFolder || normalizedPath.startsWith(`${normalizedFolder}/`);
 }
 
+/**
+ * Whether a path carries a `..` segment.
+ *
+ * Vault paths never do. `normalizeVaultPath` only tidies slashes, so a `..` survives it and
+ * then defeats any "is this inside that folder?" test written with `startsWith` — the prefix
+ * still matches while the resolved path is somewhere else entirely. Every path rebuilt from
+ * persisted JSON is checked with this before it is used to write or delete.
+ */
+export function hasTraversalSegment(path: string): boolean {
+	return normalizeVaultPath(path).split('/').includes('..');
+}
+
 /** Whether `path` sits inside any of `folders`. */
 export function isInAnyFolder(path: string, folders: readonly string[]): boolean {
 	return folders.some((folder) => folder.trim().length > 0 && isInFolder(path, folder));
