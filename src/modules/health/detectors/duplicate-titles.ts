@@ -13,8 +13,12 @@
  *     are more than 90 % similar yet are siblings rather than duplicates — so a minimum length
  *     gate keeps the pass off names too short to carry that much meaning.
  *
- * The pairwise pass is O(n²) over the *unique* titles only, which is what keeps it affordable;
- * the scan engine may still hand it to a worker on very large vaults.
+ * The pairwise pass runs over the *unique* titles only, and delegates to the similarity kernel
+ * rather than comparing every pair itself. Candidates there are ordered by length so the inner
+ * loop stops as soon as the length gap alone exceeds the edit distance the threshold allows,
+ * and each distance is computed under that same bound. Without both, a vault whose notes carry
+ * descriptive names is a full n² of unbounded edit-distance matrices on the main thread — the
+ * detector pass is synchronous, so that time is time Obsidian spends unable to paint.
  */
 
 import type {
@@ -25,7 +29,7 @@ import type {
 } from '../../../types/health';
 import type { NoteRecord } from '../../../types/note';
 import { STRINGS } from '../../../core/strings';
-import { similarity } from '../../../utils/levenshtein';
+import { findSimilarPairs } from '../../../workers/health-scan.worker';
 import { normalizeTitle } from '../../../utils/string';
 import { createIssue, stableGroupKey } from '../issue';
 
@@ -122,17 +126,24 @@ const duplicateTitlesDetector: Detector = {
 			}
 		}
 
-		for (let i = 0; i < candidates.length; i++) {
-			const first = candidates[i];
-			if (!first) continue;
-			for (let j = i + 1; j < candidates.length; j++) {
-				const second = candidates[j];
-				if (!second) continue;
-				const score = similarity(first.title, second.title);
-				if (score > duplicateSimilarityThreshold) {
-					issues.push(buildIssue([first.record, second.record], score, false));
-				}
-			}
+		// Every candidate title is a distinct group key, so titles map back to records 1:1.
+		const byTitle = new Map<string, NoteRecord>();
+		for (const candidate of candidates) byTitle.set(candidate.title, candidate.record);
+
+		// The kernel reports exactly the pairs this loop used to, but sorts the candidates by
+		// length and bounds each edit-distance matrix by the distance the threshold allows, so
+		// a pair whose lengths alone rule it out costs nothing. The length gate is applied
+		// above, against the basename, so the kernel's own floor is left off.
+		const { pairs } = findSimilarPairs({
+			items: candidates.map((candidate) => candidate.title),
+			threshold: duplicateSimilarityThreshold,
+			minLength: 0,
+		});
+		for (const pair of pairs) {
+			const first = byTitle.get(pair.a);
+			const second = byTitle.get(pair.b);
+			if (!first || !second) continue;
+			issues.push(buildIssue([first, second], pair.similarity, false));
 		}
 
 		return issues;

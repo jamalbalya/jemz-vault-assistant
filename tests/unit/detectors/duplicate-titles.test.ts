@@ -246,6 +246,36 @@ describe('duplicate-title detector, fuzzy pass', () => {
 		).toEqual([]);
 	});
 
+	it('reports every near-identical pair in a cluster, not just one', () => {
+		const app = buildVault([
+			NOTE('a/Quarterly Planning Document Draft.md'),
+			NOTE('b/Quarterly Planning Document Drafts.md'),
+			NOTE('c/Quarterly Planning Document Drafted.md'),
+		]);
+
+		expect(groupKeys(detector.run(contextFor(app)))).toEqual([
+			'a/Quarterly Planning Document Draft.md+b/Quarterly Planning Document Drafts.md',
+			'a/Quarterly Planning Document Draft.md+c/Quarterly Planning Document Drafted.md',
+			'b/Quarterly Planning Document Drafts.md+c/Quarterly Planning Document Drafted.md',
+		]);
+	});
+
+	it('still pairs titles whose lengths differ by the whole allowance', () => {
+		// Against the 29-character title, two characters missing is 0.93 similar and reported,
+		// five is 0.83 and is not. The pass orders candidates by length and stops as soon as
+		// the length gap alone rules the rest out, so this is where a window that closed one
+		// character too early would show up: as a duplicate that quietly stops being reported.
+		const app = buildVault([
+			NOTE('a/Engineering Handbook Revision.md'),
+			NOTE('b/Engineering Handbook Revisi.md'),
+			NOTE('c/Engineering Handbook Rev.md'),
+		]);
+
+		expect(groupKeys(detector.run(contextFor(app)))).toEqual([
+			'a/Engineering Handbook Revision.md+b/Engineering Handbook Revisi.md',
+		]);
+	});
+
 	it('never fuzzy-matches a title that is already in an exact group', () => {
 		const app = buildVault([
 			NOTE('a/Quarterly Planning Document Draft.md'),

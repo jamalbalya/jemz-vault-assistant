@@ -32,6 +32,78 @@ const LOREM =
 	'incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud. ';
 
 /**
+ * Words the descriptive-title vault draws on. Long enough that titles clear the fuzzy gate,
+ * varied enough that genuine near-duplicates stay rare — which is what a real vault looks
+ * like, and what the pairwise pass has to stay affordable over.
+ */
+const TITLE_WORDS = [
+	'alpha',
+	'beacon',
+	'crimson',
+	'delta',
+	'ember',
+	'falcon',
+	'granite',
+	'harbour',
+	'ivory',
+	'juniper',
+	'kestrel',
+	'lantern',
+	'meridian',
+	'nectar',
+	'onyx',
+	'pinnacle',
+	'quartz',
+	'ripple',
+	'summit',
+	'tundra',
+] as const;
+
+/** Deterministic PRNG, so the generated vault is the same on every run. */
+function seeded(seed: number): () => number {
+	let state = seed >>> 0 || 1;
+	return () => {
+		state ^= state << 13;
+		state ^= state >>> 17;
+		state ^= state << 5;
+		state >>>= 0;
+		return state / 0x100000000;
+	};
+}
+
+/**
+ * Generate a vault whose notes carry descriptive multi-word names.
+ *
+ * The ordinary benchmark vault names its notes `note-0`, `note-1`, … — all far below the
+ * `duplicateMinFuzzyLength` gate, so the duplicate-title detector's pairwise pass never runs
+ * at all there and its cost stays invisible no matter how the vault grows. Anyone whose notes
+ * are named after what is in them lands in exactly the case that vault cannot reach.
+ */
+function generateDescriptiveVault(count: number): App {
+	const next = seeded(20260615);
+	const files: FixtureFile[] = [];
+	const seen = new Set<string>();
+
+	while (seen.size < count) {
+		const parts: string[] = [];
+		const length = 3 + Math.floor(next() * 3);
+		for (let i = 0; i < length; i++) {
+			parts.push(TITLE_WORDS[Math.floor(next() * TITLE_WORDS.length)] as string);
+		}
+		const title = parts.join(' ');
+		if (title.length < 20 || seen.has(title)) continue;
+		seen.add(title);
+		files.push({
+			path: `notes/folder-${seen.size % 50}/${title}.md`,
+			frontmatter: { created: '2026-01-01', type: 'note' },
+			content: `# ${title}\n\n${LOREM}`,
+		});
+	}
+
+	return buildVault(files, `perf-titles-${count}`);
+}
+
+/**
  * Generate a vault of `count` notes with a realistic mix: most notes link to a neighbour,
  * roughly one in fifty has a broken link, one in a hundred is empty, and tags repeat across
  * a small vocabulary so the tag pass has real work to do.
@@ -131,6 +203,28 @@ describe('performance', () => {
 			}, 180_000);
 		});
 	}
+
+	it('completes a full scan of a vault whose notes have descriptive names', async () => {
+		// The duplicate-title pass compares every surviving title with every other one. Over
+		// 5 000 long, distinct names that is 12.5 million comparisons, and computing each edit
+		// distance in full — rather than bounding it by what the similarity threshold allows,
+		// and skipping the pairs whose lengths alone rule them out — takes over a minute of
+		// synchronous main-thread time. Detectors do not yield, so that is a minute of frozen
+		// Obsidian, and no budget in the vault above can see it.
+		const harness = await createHarness(generateDescriptiveVault(5_000), {
+			now: day('2026-06-15'),
+		});
+
+		const startedAt = performance.now();
+		const report = await harness.engine.scan('full');
+		const elapsed = performance.now() - startedAt;
+
+		console.info(
+			`  full scan (5000 descriptive titles): ${elapsed.toFixed(0)}ms, ${report.issues.length} issues`,
+		);
+		expect(report.filesScanned).toBeGreaterThanOrEqual(5_000);
+		expect(elapsed).toBeLessThan(BUDGET.fullScan10k);
+	}, 240_000);
 
 	it('runs an incremental scan quickly once the content index is warm', async () => {
 		const harness = await createHarness(generateVault(10_000), {
