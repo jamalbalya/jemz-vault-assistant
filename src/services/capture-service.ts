@@ -15,6 +15,42 @@ import { formatDate } from '../utils/date';
 import { joinPath, uniquePath } from '../utils/file';
 import { normalizeTag, sanitizeFilename } from '../utils/string';
 
+/**
+ * Characters that give a plain YAML scalar a second meaning when they open it: flow
+ * collectors, anchors, tags, block scalars, quotes, directives and comments.
+ */
+const YAML_INDICATOR_START = /^[-?:,[\]{}#&*!|>'"%@`]/;
+
+/** Words YAML reads back as a boolean or a null rather than as the text that was typed. */
+const YAML_RESERVED_WORD = /^(?:y|n|yes|no|true|false|on|off|null|~)$/i;
+
+/**
+ * Render a value as a YAML scalar, quoting it whenever plain style would change its meaning.
+ *
+ * This module assembles frontmatter as text rather than through a YAML library, so every
+ * value that came from the user has to be checked before it is written. A source typed as
+ * `[1] Deep Work` opens a flow sequence and takes the whole block down with it; a project
+ * note called `#Roadmap` is read as a comment and silently becomes null. Either one produces
+ * a brand new capture whose properties Obsidian cannot parse — which this plugin then
+ * reports as corrupted frontmatter and, correctly, refuses to repair automatically.
+ *
+ * Quoting is deliberately eager: a value that did not need quotes reads identically either
+ * way, while one that did is unrecoverable.
+ */
+function yamlScalar(value: string): string {
+	const needsQuotes =
+		value.length === 0 ||
+		value !== value.trim() ||
+		value.includes(':') ||
+		YAML_INDICATOR_START.test(value) ||
+		YAML_RESERVED_WORD.test(value) ||
+		/\s#/.test(value) ||
+		/[\r\n\t]/.test(value);
+	if (!needsQuotes) return value;
+	// Backslashes first: escaping the quotes would otherwise be undone by escaping theirs.
+	return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+}
+
 /** Raised when a capture cannot be written. */
 export class CaptureError extends Error {
 	constructor(message: string) {
@@ -101,17 +137,19 @@ export class CaptureService {
 		const frontmatter = this.buildFrontmatter(input, at);
 		const lines: string[] = ['---'];
 		for (const [key, value] of Object.entries(frontmatter)) {
+			// Template keys are user-typed too, so they get the same treatment as values.
+			const name = yamlScalar(key);
 			if (Array.isArray(value)) {
 				if (value.length === 0) {
-					lines.push(`${key}: []`);
+					lines.push(`${name}: []`);
 				} else {
-					lines.push(`${key}:`);
-					for (const item of value) lines.push(`  - ${String(item)}`);
+					lines.push(`${name}:`);
+					for (const item of value) lines.push(`  - ${yamlScalar(String(item))}`);
 				}
-			} else if (typeof value === 'string' && (value.includes(':') || value.length === 0)) {
-				lines.push(`${key}: "${value.replace(/"/g, '\\"')}"`);
+			} else if (typeof value === 'string') {
+				lines.push(`${name}: ${yamlScalar(value)}`);
 			} else {
-				lines.push(`${key}: ${String(value)}`);
+				lines.push(`${name}: ${String(value)}`);
 			}
 		}
 		lines.push('---', '');
