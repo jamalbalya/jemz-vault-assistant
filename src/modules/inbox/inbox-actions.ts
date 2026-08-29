@@ -35,7 +35,7 @@ export type InboxActionResult = { ok: true } | { ok: false; reason: string };
 export const INBOX_ACTION_CANCELLED = 'cancelled';
 
 /** Most tag suggestions offered at once — beyond this the list stops being a shortcut. */
-const MAX_TAG_SUGGESTIONS = 200;
+export const MAX_TAG_SUGGESTIONS = 200;
 
 export interface InboxActionsDeps {
 	app: App;

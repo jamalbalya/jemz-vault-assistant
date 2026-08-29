@@ -43,7 +43,7 @@ import type { TabPanel } from './modules/dashboard/tab-manager';
 import { StatusBarItem } from './modules/dashboard/status-bar';
 import { QuickCaptureModal } from './modules/capture/quick-capture-modal';
 import { InboxPanel } from './modules/inbox/inbox-view';
-import { InboxActions } from './modules/inbox/inbox-actions';
+import { InboxActions, MAX_TAG_SUGGESTIONS } from './modules/inbox/inbox-actions';
 import { TriageMode } from './modules/inbox/triage-mode';
 import { HealthPanel } from './modules/health/health-view';
 import { RecallPanel } from './modules/retrieval/recall-view';
@@ -189,11 +189,17 @@ export default class JemzVaultAssistantPlugin extends Plugin {
 			logger: this.logger.child('fixes'),
 		});
 
+		// `suggest('')` returns the vault's tags most-used first, which is the order the tag
+		// prompt documents and the order that matters once a vault has more tags than the
+		// prompt will show: taking the map's keys handed it whatever order the index happened
+		// to build, so a heavily used tag could fall off the end of the list.
+		const tagSuggestions = (): readonly string[] => this.tags.suggest('', MAX_TAG_SUGGESTIONS);
+
 		this.inboxActions = new InboxActions({
 			app: this.app,
 			inbox: this.inbox,
 			logger: this.logger.child('inbox-actions'),
-			tagSuggestions: () => Array.from(this.tags.allTags().keys()),
+			tagSuggestions,
 		});
 		// Triage drives the vault-touching half directly and owns its own pickers and
 		// confirmations, so it takes the service rather than the UI wrapper — otherwise a
@@ -204,6 +210,11 @@ export default class JemzVaultAssistantPlugin extends Plugin {
 			actions: this.inbox,
 			content: this.contentIndex,
 			logger: this.logger.child('triage'),
+			// Without this the tag prompt inside triage offers no autocomplete at all, while
+			// the identical prompt in the inbox list does — and triage is where the tags are
+			// actually typed, so it is the one place the suggestions stop tag drift before the
+			// health module has to clean it up.
+			tagSuggestions,
 		});
 	}
 

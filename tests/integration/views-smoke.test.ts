@@ -107,6 +107,7 @@ describe('HealthPanel card lifetimes', () => {
 			settings: harness.settings,
 			bus: harness.bus,
 			logger: harness.logger,
+			onOpenSettings: () => undefined,
 		});
 
 		panel.mount(host);
