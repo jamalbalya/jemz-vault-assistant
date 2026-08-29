@@ -194,6 +194,35 @@ describe('applying a fix', () => {
 		expect(harness.app.vault.getFileByPath('00-Inbox/Lost Page.md')).not.toBeNull();
 	});
 
+	it('creates a folder-carrying target where the link actually points', async () => {
+		// `[[Projects/Roadmap]]` addresses a path, not a name: a note created anywhere else
+		// leaves the link exactly as broken as it was, which is the one thing this fix exists
+		// to stop. `LinkService` resolves the folder itself; the plan has to let it.
+		const harness = await createHarness(
+			buildVault([{ path: 'notes/source.md', content: 'See [[Projects/Roadmap]].' }]),
+		);
+		const report = await harness.engine.scan('full');
+		const broken = issuesOf(report.issues, 'broken-link');
+		expect(broken).toHaveLength(1);
+
+		const prepared = await harness.fixes.prepare('create-note', broken);
+		expect(prepared.plan.changes[0]?.path).toBe('Projects/Roadmap.md');
+
+		await harness.safety.execute(
+			prepared.plan,
+			grantConfirmation(planIdOf(prepared.plan)),
+			prepared.execute,
+			{ skipBackup: true },
+		);
+
+		expect(harness.app.vault.getFileByPath('Projects/Roadmap.md')).not.toBeNull();
+		// And the link it was created for now resolves.
+		harness.app.metadataCache.refresh();
+		expect(harness.links.resolve('Projects/Roadmap', 'notes/source.md')?.path).toBe(
+			'Projects/Roadmap.md',
+		);
+	});
+
 	it('merges misspelled tags into the canonical spelling', async () => {
 		const { harness, issues } = await scanned();
 		const tagIssues = issuesOf(issues, 'tag-inconsistency');

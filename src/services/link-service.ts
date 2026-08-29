@@ -24,6 +24,7 @@ import {
 	getBasename,
 	getFileName,
 	getFolderPath,
+	hasTraversalSegment,
 	joinPath,
 	normalizeVaultPath,
 	uniquePath,
@@ -513,11 +514,24 @@ export class LinkService {
 		return next;
 	}
 
-	/** Where a note for `target` should live, guaranteed not to collide with an existing file. */
-	private plannedNotePath(target: string, folder: string): string {
+	/**
+	 * Where a note for `target` should live, guaranteed not to collide with an existing file.
+	 *
+	 * Public because the fix planner has to name the same path in its preview that
+	 * {@link createMissingNote} will go on to use. Deriving it twice from the same target is
+	 * what keeps "will create X" and "created X" the same file.
+	 */
+	plannedNotePath(target: string, folder: string): string {
 		const linkpath = stripSubpath(target);
 		const ownFolder = getFolderPath(linkpath);
-		const parent = ownFolder.length > 0 ? ownFolder : normalizeVaultPath(folder);
+		// A link target is note text and may say anything, `../../elsewhere` included. Vault
+		// paths never climb, and `normalizeVaultPath` only tidies slashes, so an unchecked
+		// `..` would put the new note outside the vault. Such a target keeps its name and
+		// falls back to `folder`, which is where a bare name goes anyway.
+		const parent =
+			ownFolder.length > 0 && !hasTraversalSegment(ownFolder)
+				? ownFolder
+				: normalizeVaultPath(folder);
 
 		const name = getFileName(linkpath);
 		// `[[Note.md]]` and `[[Note]]` mean the same file, so only a markdown extension is

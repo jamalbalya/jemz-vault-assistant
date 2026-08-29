@@ -295,37 +295,42 @@ export class FixActions {
 		return result;
 	}
 
-	/** Create the notes that broken links point at. */
+	/**
+	 * Create the notes that broken links point at.
+	 *
+	 * The link target decides the folder as well as the name, so the whole target travels
+	 * through to the executor rather than just its base name. `[[Projects/Roadmap]]` names a
+	 * path: a note created anywhere else leaves the link exactly as broken as it was, which
+	 * is the one outcome this fix exists to prevent. `LinkService` owns that derivation, and
+	 * planning through the same method is what makes the preview name the file that appears.
+	 */
 	private async prepareCreateNotes(issues: readonly HealthIssue[]): Promise<PreparedFix> {
 		const settings = this.deps.getSettings();
 		const folder = settings.capture.inboxFolder.trim();
+		/** Planned path -> the link target it is being created for. */
 		const targets = new Map<string, string>();
 
 		for (const issue of issues) {
 			if (issue.data.kind !== 'broken-link') continue;
-			const name = sanitizeFilename(getBasename(issue.data.target));
-			if (name.length === 0 || targets.has(name)) continue;
-			targets.set(
-				name,
-				uniquePath(
-					joinPath(folder, `${name}.md`),
-					(candidate) => this.deps.app.vault.getAbstractFileByPath(candidate) !== null,
-				),
-			);
+			const path = this.deps.link.plannedNotePath(issue.data.target, folder);
+			if (path.length === 0 || targets.has(path)) continue;
+			targets.set(path, issue.data.target);
 		}
 		if (targets.size === 0) throw new FixPlanError('No note names could be derived.');
 
-		const changes: PlannedChange[] = Array.from(targets.entries()).map(([name, path]) => ({
+		const changes: PlannedChange[] = Array.from(targets.keys()).map((path) => ({
 			path,
 			kind: 'create',
-			description: `Create "${name}"`,
+			description: `Create "${getBasename(path)}"`,
 			expectedMtime: 0,
 		}));
 
 		return {
 			plan: this.buildPlan('create-note', STRINGS.health.fixes.createNote, issues, changes),
 			execute: async (change) => {
-				await this.deps.link.createMissingNote(getBasename(change.path), folder);
+				const target = targets.get(change.path);
+				if (!target) throw new Error(`No link target recorded for "${change.path}"`);
+				await this.deps.link.createMissingNote(target, folder);
 			},
 		};
 	}

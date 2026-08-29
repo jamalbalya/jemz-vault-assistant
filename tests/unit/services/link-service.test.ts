@@ -633,6 +633,19 @@ describe('LinkService.createMissingNote', () => {
 		expect(file.path).toBe('Notes/Bad Name Here.md');
 	});
 
+	it('refuses to let a target climb out of the vault', async () => {
+		// A link target is note text and may say anything. `normalizeVaultPath` only tidies
+		// slashes, so `..` survives it; without a check the note would be created outside the
+		// vault. The name is kept and the note lands in the configured folder instead.
+		const app = buildVault([{ path: 'a.md', content: 'x' }]);
+		const file = await serviceFor(app, now).createMissingNote(
+			'../../outside/Roadmap',
+			'00-Inbox',
+		);
+
+		expect(file.path).toBe('00-Inbox/Roadmap.md');
+	});
+
 	it('treats a target that names its own folder as vault relative', async () => {
 		const app = buildVault([{ path: 'a.md', content: 'x' }]);
 		const file = await serviceFor(app, now).createMissingNote(
