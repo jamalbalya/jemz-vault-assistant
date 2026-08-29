@@ -17,7 +17,7 @@ import {
 	UnconfirmedChangeError,
 } from '../../src/core/safety';
 import { createHarness, type Harness } from '../helpers/harness';
-import { loadVaultFromDisk } from '../helpers/vault-fixture';
+import { buildVault, loadVaultFromDisk } from '../helpers/vault-fixture';
 
 async function scanned(): Promise<{ harness: Harness; issues: readonly HealthIssue[] }> {
 	const harness = await createHarness(loadVaultFromDisk());
@@ -238,6 +238,42 @@ describe('applying a fix', () => {
 		const moved = prepared.plan.changes[0]?.targetPath ?? '';
 		expect(moved.startsWith('04-Archive/attachments/')).toBe(true);
 		expect(harness.app.vault.getFileByPath(moved)).not.toBeNull();
+	});
+
+	it('gives each archived file its own destination when two share a name', async () => {
+		// Two unused attachments called `diagram.png` in different folders. Nothing has moved
+		// yet, so the vault cannot tell the planner that the first one has already claimed
+		// `04-Archive/attachments/diagram.png`; without tracking that, both changes name the
+		// same destination and the second rename fails against a preview that promised it.
+		const harness = await createHarness(
+			buildVault([
+				{ path: 'notes/keep.md', content: '# Keep' },
+				{ path: 'one/diagram.png', content: 'binary:10', size: 10 },
+				{ path: 'two/diagram.png', content: 'binary:20', size: 20 },
+			]),
+		);
+		const report = await harness.engine.scan('full');
+		const attachments = issuesOf(report.issues, 'unused-attachment');
+		expect(attachments).toHaveLength(2);
+
+		const prepared = await harness.fixes.prepare('move-to-archive', attachments);
+		const destinations = prepared.plan.changes.map((change) => change.targetPath);
+		expect(new Set(destinations).size).toBe(2);
+
+		const result = await harness.safety.execute(
+			prepared.plan,
+			grantConfirmation(planIdOf(prepared.plan)),
+			prepared.execute,
+		);
+
+		expect(result.failed).toEqual([]);
+		expect(result.applied).toHaveLength(2);
+		// Both files survive the move, each at the path the preview named.
+		for (const destination of destinations) {
+			expect(harness.app.vault.getFileByPath(destination ?? '')).not.toBeNull();
+		}
+		expect(harness.app.vault.getFileByPath('one/diagram.png')).toBeNull();
+		expect(harness.app.vault.getFileByPath('two/diagram.png')).toBeNull();
 	});
 
 	it('sends an empty note to the trash rather than deleting it outright', async () => {

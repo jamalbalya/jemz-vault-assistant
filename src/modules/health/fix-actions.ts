@@ -377,6 +377,11 @@ export class FixActions {
 	private async prepareArchive(issues: readonly HealthIssue[]): Promise<PreparedFix> {
 		const settings = this.deps.getSettings();
 		const destinations = new Map<string, string>();
+		// Destinations already spoken for by an earlier file in this same batch. The vault
+		// cannot answer for them — nothing has moved yet — so two same-named files from
+		// different folders would both be planned into one path, and the second move would
+		// fail at apply time against a preview that promised it would work.
+		const claimed = new Set<string>();
 
 		for (const file of this.uniqueFiles(issues)) {
 			const folder =
@@ -384,13 +389,14 @@ export class FixActions {
 					? settings.capture.archiveFolder.trim()
 					: settings.capture.attachmentArchiveFolder.trim();
 			const desired = joinPath(folder, file.name);
-			destinations.set(
-				file.path,
-				uniquePath(
-					desired,
-					(candidate) => this.deps.app.vault.getAbstractFileByPath(candidate) !== null,
-				),
+			const destination = uniquePath(
+				desired,
+				(candidate) =>
+					claimed.has(candidate) ||
+					this.deps.app.vault.getAbstractFileByPath(candidate) !== null,
 			);
+			claimed.add(destination);
+			destinations.set(file.path, destination);
 		}
 
 		const changes: PlannedChange[] = Array.from(destinations.entries()).map(
