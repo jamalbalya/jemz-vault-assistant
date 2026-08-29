@@ -87,6 +87,54 @@ describe('HealthPanel', () => {
 	});
 });
 
+describe('HealthPanel card lifetimes', () => {
+	/**
+	 * The card strip is redrawn on every scan and every tab activation. Wiring a listener per
+	 * card means re-registering on each redraw — `Component.registerDomEvent` only releases at
+	 * `unload()` — so the handlers accumulate and every redrawn card stays reachable and live.
+	 */
+	it('keeps filtering working across redraws without leaving old cards live', async () => {
+		const harness = await harnessed();
+		const host = container();
+		const panel = new HealthPanel({
+			app: harness.obsidianApp,
+			health: harness.health,
+			fixes: harness.fixes,
+			safety: harness.safety,
+			backup: harness.backup,
+			actionLog: harness.actionLog,
+			index: harness.index,
+			settings: harness.settings,
+			bus: harness.bus,
+			logger: harness.logger,
+		});
+
+		panel.mount(host);
+		await harness.engine.scan('full');
+		panel.refresh();
+
+		const cards = (): HTMLElement[] =>
+			Array.from(host.querySelectorAll<HTMLElement>('.jva-health-card:not([disabled])'));
+		const first = cards()[0];
+		expect(first).toBeDefined();
+		const type = (first as HTMLElement).getAttribute('data-type');
+
+		// A live card still filters.
+		(first as HTMLElement).dispatchEvent(new MouseEvent('click', { bubbles: true }));
+		const live = host.querySelector(`.jva-health-card[data-type="${type ?? ''}"]`);
+		expect((live as HTMLElement).getAttribute('aria-pressed')).toBe('true');
+
+		// The card that was just replaced must not still toggle the filter back off.
+		expect((first as HTMLElement).isConnected).toBe(false);
+		(first as HTMLElement).dispatchEvent(new MouseEvent('click', { bubbles: false }));
+
+		const after = host.querySelector(`.jva-health-card[data-type="${type ?? ''}"]`);
+		expect((after as HTMLElement).getAttribute('aria-pressed')).toBe('true');
+
+		panel.unmount();
+	});
+});
+
 describe('RecallPanel listener lifetimes', () => {
 	/**
 	 * The saved-view list is rebuilt on every `settings-changed` — which every scan, ignore

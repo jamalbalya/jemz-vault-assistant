@@ -161,6 +161,12 @@ export class HealthPanel extends Component implements TabPanel {
 		this.cardsEl = this.rootEl.createDiv({ cls: 'jva-health__cards' });
 		this.issuesEl = this.rootEl.createDiv({ cls: 'jva-health__issues' });
 
+		// Delegated once, on the container that survives every redraw. Registering a listener
+		// per card instead would re-register on every refresh — `registerDomEvent` only
+		// releases at `unload()` — so the handlers would pile up and each redrawn card would
+		// stay reachable, and live, for as long as the dashboard was open.
+		this.registerDomEvent(this.cardsEl, 'click', (event) => this.onCardClick(event));
+
 		this.register(this.deps.bus.on('scan-started', (payload) => this.onScanStarted(payload)));
 		this.register(this.deps.bus.on('scan-progress', (payload) => this.onScanProgress(payload)));
 		this.register(this.deps.bus.on('scan-completed', () => this.onScanCompleted()));
@@ -329,12 +335,27 @@ export class HealthPanel extends Component implements TabPanel {
 				card.setAttr('aria-disabled', 'true');
 				continue;
 			}
-			this.registerDomEvent(card, 'click', () => {
-				this.filter = this.filter === type ? null : type;
-				this.renderCards();
-				this.renderIssues();
-			});
 		}
+	}
+
+	/**
+	 * Handle a click anywhere in the card strip.
+	 *
+	 * A card with nothing wrong carries `disabled`, which stops the event at the source; the
+	 * attribute is checked anyway so the rule does not depend on that.
+	 */
+	private onCardClick(event: MouseEvent): void {
+		const target = event.target;
+		if (!(target instanceof Element)) return;
+		const card = target.closest('.jva-health-card');
+		if (!(card instanceof HTMLElement) || card.hasAttribute('disabled')) return;
+
+		const type = ISSUE_TYPES.find((candidate) => candidate === card.getAttribute('data-type'));
+		if (!type) return;
+
+		this.filter = this.filter === type ? null : type;
+		this.renderCards();
+		this.renderIssues();
 	}
 
 	/** Toolbar plus the (optionally filtered) issue rows, with an empty state for every case. */
