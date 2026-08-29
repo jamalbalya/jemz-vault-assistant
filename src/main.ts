@@ -452,14 +452,14 @@ export default class JemzVaultAssistantPlugin extends Plugin {
 			logger: this.logger.child('capture-modal'),
 			onCaptured: () => {
 				this.bus.emit('inbox-changed', { count: this.inbox.count() });
-				void this.analytics.track('note-captured');
+				void this.analytics.track('capture-created');
 			},
 		}).open();
 	}
 
 	/** Start a triage session over the current inbox. */
 	async startTriage(): Promise<void> {
-		void this.analytics.track('triage-started');
+		void this.analytics.track('triage-session');
 		await this.triage.start();
 	}
 
