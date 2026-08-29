@@ -89,7 +89,12 @@ export class RecallPanel implements TabPanel {
 
 	private containerEl: HTMLElement | null = null;
 	private ui: RecallUi | null = null;
+	/** Listeners on the panel chrome, which lives as long as the mount. */
 	private readonly cleanups: (() => void)[] = [];
+	/** Listeners inside the saved-view list, released whenever that list is rebuilt. */
+	private readonly viewListCleanups: (() => void)[] = [];
+	/** Listeners inside the results area, released whenever those results are rebuilt. */
+	private readonly resultsCleanups: (() => void)[] = [];
 	private readonly collapsedPanels = new Set<string>();
 	private readonly scheduleSearch: DebouncedFunction<[]>;
 
@@ -145,6 +150,8 @@ export class RecallPanel implements TabPanel {
 		this.searchToken += 1;
 		this.scheduleSearch.cancel();
 		this.ui?.builder.destroy();
+		release(this.viewListCleanups);
+		release(this.resultsCleanups);
 		for (const cleanup of this.cleanups.splice(0)) cleanup();
 		this.ui = null;
 		this.containerEl?.empty();
@@ -274,6 +281,11 @@ export class RecallPanel implements TabPanel {
 	private renderViewList(): void {
 		const ui = this.ui;
 		if (!ui) return;
+		// The buttons below are rebuilt from scratch, so the handlers bound to the previous
+		// set go with them. `renderViewList` runs on every `settings-changed` — which every
+		// scan, ignore and preference edit raises — so leaving them registered grows the
+		// cleanup list for as long as the tab is open and pins each detached button in memory.
+		release(this.viewListCleanups);
 		ui.viewListEl.empty();
 
 		const views = this.deps.retrieval.views();
@@ -297,8 +309,10 @@ export class RecallPanel implements TabPanel {
 				pin.setAttr('aria-label', STRINGS.common.pin);
 			}
 
-			this.registerDomEvent(button, 'click', () => this.toggleView(view));
-			this.registerDomEvent(button, 'contextmenu', (event) => {
+			this.registerScoped(this.viewListCleanups, button, 'click', () =>
+				this.toggleView(view),
+			);
+			this.registerScoped(this.viewListCleanups, button, 'contextmenu', (event) => {
 				event.preventDefault();
 				this.showViewMenu(view, event);
 			});
@@ -464,6 +478,7 @@ export class RecallPanel implements TabPanel {
 		if (!ui) return;
 
 		const token = (this.searchToken += 1);
+		release(this.resultsCleanups);
 		ui.resultsEl.empty();
 		renderLoading(ui.resultsEl, STRINGS.find.searching);
 
@@ -475,6 +490,7 @@ export class RecallPanel implements TabPanel {
 			this.deps.logger.error('The search could not be completed', error);
 			new Notice(STRINGS.errors.unexpected);
 			ui.countEl.setText('');
+			release(this.resultsCleanups);
 			ui.resultsEl.empty();
 			renderErrorState(ui.resultsEl, {
 				title: STRINGS.errors.unexpected,
@@ -487,6 +503,7 @@ export class RecallPanel implements TabPanel {
 
 		if (token !== this.searchToken || !this.ui) return;
 		ui.countEl.setText(STRINGS.find.resultCount(response.total));
+		release(this.resultsCleanups);
 		ui.resultsEl.empty();
 
 		if (response.results.length === 0) {
@@ -634,8 +651,9 @@ export class RecallPanel implements TabPanel {
 		};
 
 		apply(!this.collapsedPanels.has(id));
-		this.registerDomEvent(header, 'click', toggle);
-		this.registerDomEvent(header, 'keydown', (event) => {
+		// Contextual panels are rebuilt on every search, so their headers are results-scoped.
+		this.registerScoped(this.resultsCleanups, header, 'click', toggle);
+		this.registerScoped(this.resultsCleanups, header, 'keydown', (event) => {
 			if (event.key !== 'Enter' && event.key !== ' ') return;
 			event.preventDefault();
 			toggle();
@@ -884,8 +902,23 @@ export class RecallPanel implements TabPanel {
 		type: K,
 		handler: (event: HTMLElementEventMap[K]) => void,
 	): void {
+		this.registerScoped(this.cleanups, el, type, handler);
+	}
+
+	/**
+	 * Add a listener whose lifetime is the given scope rather than the whole mount.
+	 *
+	 * Anything inside a region that gets emptied and rebuilt belongs in that region's scope,
+	 * so the rebuild releases it.
+	 */
+	private registerScoped<K extends keyof HTMLElementEventMap>(
+		scope: (() => void)[],
+		el: HTMLElement,
+		type: K,
+		handler: (event: HTMLElementEventMap[K]) => void,
+	): void {
 		el.addEventListener(type, handler as EventListener);
-		this.cleanups.push(() => el.removeEventListener(type, handler as EventListener));
+		scope.push(() => el.removeEventListener(type, handler as EventListener));
 	}
 }
 
@@ -1081,4 +1114,9 @@ async function copyText(text: string): Promise<void> {
 
 function asSortField(value: string): SortField | null {
 	return SORT_FIELDS.find((field) => field === value) ?? null;
+}
+
+/** Run and drop every cleanup in a scope. */
+function release(cleanups: (() => void)[]): void {
+	for (const cleanup of cleanups.splice(0)) cleanup();
 }

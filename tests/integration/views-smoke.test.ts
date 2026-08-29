@@ -87,6 +87,85 @@ describe('HealthPanel', () => {
 	});
 });
 
+describe('RecallPanel listener lifetimes', () => {
+	/**
+	 * The saved-view list is rebuilt on every `settings-changed` — which every scan, ignore
+	 * and preference edit raises — and the contextual panels on every search. Registering
+	 * their handlers for the lifetime of the mount grows without bound while the tab is open
+	 * and pins each detached element in memory; worse, a rendered-away button still carries a
+	 * live handler and can act on a click.
+	 */
+	it('drops the handlers on saved-view buttons it has rebuilt', async () => {
+		const harness = await harnessed();
+		const host = container();
+		const panel = new RecallPanel({
+			app: harness.obsidianApp,
+			retrieval: harness.retrieval,
+			index: harness.index,
+			settings: harness.settings,
+			bus: harness.bus,
+			logger: harness.logger,
+		});
+
+		await Promise.resolve(panel.mount(host));
+		await panel.whenSettled();
+		const stale = host.querySelector('.jva-saved-view');
+		expect(stale).not.toBeNull();
+		const staleId = (stale as HTMLElement).getAttribute('data-view-id');
+
+		// Any settings write rebuilds the list.
+		harness.bus.emit('settings-changed', { settings: harness.settings.get() });
+		await panel.whenSettled();
+		expect((stale as HTMLElement).isConnected).toBe(false);
+
+		// Clicking the element that is no longer on screen must do nothing at all.
+		(stale as HTMLElement).dispatchEvent(new MouseEvent('click', { bubbles: false }));
+		await panel.whenSettled();
+
+		const live = host.querySelector(`.jva-saved-view[data-view-id="${staleId ?? ''}"]`);
+		expect(live).not.toBeNull();
+		expect((live as HTMLElement).getAttribute('aria-pressed')).toBe('false');
+
+		panel.unmount();
+	});
+
+	it('drops the handlers on contextual panel headers it has rebuilt', async () => {
+		const harness = await harnessed();
+		const host = container();
+		const panel = new RecallPanel({
+			app: harness.obsidianApp,
+			retrieval: harness.retrieval,
+			index: harness.index,
+			settings: harness.settings,
+			bus: harness.bus,
+			logger: harness.logger,
+		});
+
+		await Promise.resolve(panel.mount(host));
+		await panel.whenSettled();
+		const header = host.querySelector('.jva-contextual__header');
+		expect(header).not.toBeNull();
+		const expanded = (header as HTMLElement).getAttribute('aria-expanded');
+
+		await Promise.resolve(panel.refresh());
+		await panel.whenSettled();
+		expect((header as HTMLElement).isConnected).toBe(false);
+
+		// A stale header must not be able to collapse the panel that replaced it. The stale
+		// handler toggles the shared collapsed set, which only shows up on the next render —
+		// so the panel is rebuilt again before the state is read back.
+		(header as HTMLElement).dispatchEvent(new MouseEvent('click', { bubbles: false }));
+		await panel.whenSettled();
+		await Promise.resolve(panel.refresh());
+		await panel.whenSettled();
+
+		const live = host.querySelector('.jva-contextual__header');
+		expect((live as HTMLElement).getAttribute('aria-expanded')).toBe(expanded);
+
+		panel.unmount();
+	});
+});
+
 describe('RecallPanel', () => {
 	it('mounts, refreshes and unmounts cleanly', async () => {
 		const harness = await harnessed();
