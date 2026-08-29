@@ -33,6 +33,7 @@ import { findStaleNotes } from '../modules/retrieval/contextual/stale-notes';
 import { findSimilarNotes } from '../modules/retrieval/contextual/similar-notes';
 import {
 	findUnlinkedMentionsInNote,
+	prepareMentionTargets,
 	type MentionTarget,
 } from '../modules/retrieval/contextual/unlinked-mentions';
 
@@ -234,7 +235,10 @@ export class RetrievalService {
 	 * the results list.
 	 */
 	async allUnlinkedMentions(limitPerNote = 5): Promise<UnlinkedMention[]> {
-		const targets = this.mentionTargets();
+		const minLength = this.settings.retrieval.unlinkedMentionMinLength;
+		// Ordered once for the whole pass rather than per note: the ordering depends only on
+		// the target list, and rebuilding it for every note is an n log n sort run n times.
+		const targets = prepareMentionTargets(this.mentionTargets(), minLength);
 		const records = this.candidates();
 		await this.deps.content.ensureLoaded(records);
 
@@ -244,7 +248,7 @@ export class RetrievalService {
 			if (body === null) continue;
 			mentions.push(
 				...findUnlinkedMentionsInNote(record.path, body, targets, {
-					minLength: this.settings.retrieval.unlinkedMentionMinLength,
+					minLength,
 					perTargetLimit: limitPerNote,
 				}),
 			);

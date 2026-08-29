@@ -13,6 +13,29 @@
 import type { UnlinkedMention } from '../../../types/search';
 import { contextSnippet, findWholeWordOccurrences, offsetToPosition } from '../../../utils/string';
 
+/**
+ * Characters that separate whole words, matching the boundary rule
+ * {@link findWholeWordOccurrences} applies.
+ */
+const WORD_SEPARATOR = /[^\p{L}\p{N}_]+/u;
+
+/** Lower-cased whole words of a text. */
+function wordsOf(text: string): Set<string> {
+	const words = new Set<string>();
+	for (const part of text.toLowerCase().split(WORD_SEPARATOR)) {
+		if (part.length > 0) words.add(part);
+	}
+	return words;
+}
+
+/** The first whole word of a title, lower-cased, or null when it has none. */
+function firstWordOf(title: string): string | null {
+	for (const part of title.toLowerCase().split(WORD_SEPARATOR)) {
+		if (part.length > 0) return part;
+	}
+	return null;
+}
+
 /** A note that could be linked to. */
 export interface MentionTarget {
 	readonly path: string;
@@ -26,6 +49,49 @@ export interface UnlinkedMentionOptions {
 	limit?: number;
 	/** Cap the mentions reported per target note. */
 	perTargetLimit?: number;
+}
+
+/** One target, with the word its title requires the note to contain. */
+interface PreparedTarget {
+	readonly target: MentionTarget;
+	/** Lower-cased first whole word of the title, or null when it has none. */
+	readonly firstWord: string | null;
+}
+
+/**
+ * Targets ordered and annotated once, ready to scan any number of notes.
+ *
+ * The ordering depends only on the target list, so the whole-vault pass must not rebuild it
+ * per note: that alone is an n log n sort repeated n times, and on a 2 000 note vault it
+ * costs more than all the text scanning put together.
+ */
+export interface PreparedMentionTargets {
+	readonly minLength: number;
+	readonly entries: readonly PreparedTarget[];
+}
+
+/**
+ * Order targets longest-title-first and record the word each one needs.
+ *
+ * Longest first is what lets a longer title claim its span before a shorter one can, so the
+ * order is part of the result, not an optimisation.
+ */
+export function prepareMentionTargets(
+	targets: readonly MentionTarget[],
+	minLength: number,
+): PreparedMentionTargets {
+	const entries = targets
+		.filter((target) => target.title.length >= minLength)
+		.slice()
+		.sort((a, b) => b.title.length - a.title.length || a.title.localeCompare(b.title))
+		.map((target) => ({ target, firstWord: firstWordOf(target.title) }));
+	return { minLength, entries };
+}
+
+function isPrepared(
+	value: readonly MentionTarget[] | PreparedMentionTargets,
+): value is PreparedMentionTargets {
+	return !Array.isArray(value);
 }
 
 /**
@@ -59,15 +125,17 @@ export function maskUnlinkableRegions(content: string): string {
 export function findUnlinkedMentionsInNote(
 	sourcePath: string,
 	content: string,
-	targets: readonly MentionTarget[],
+	targets: readonly MentionTarget[] | PreparedMentionTargets,
 	options: UnlinkedMentionOptions,
 ): UnlinkedMention[] {
 	const masked = maskUnlinkableRegions(content);
-	// Longest titles first so a longer title claims its span before a shorter one can.
-	const ordered = targets
-		.filter((target) => target.path !== sourcePath && target.title.length >= options.minLength)
-		.slice()
-		.sort((a, b) => b.title.length - a.title.length || a.title.localeCompare(b.title));
+	// Every whole word in this note, collected once. Scanning the body once per title is
+	// quadratic in the number of notes, and the whole-vault view runs that for every note —
+	// the difference between a click and a minute of frozen UI on a large vault.
+	const wordsInNote = wordsOf(masked);
+	const prepared = isPrepared(targets)
+		? targets
+		: prepareMentionTargets(targets, options.minLength);
 
 	const claimed: [number, number][] = [];
 	const overlaps = (start: number, end: number): boolean =>
@@ -76,7 +144,16 @@ export function findUnlinkedMentionsInNote(
 	const mentions: UnlinkedMention[] = [];
 	const perTarget = new Map<string, number>();
 
-	for (const target of ordered) {
+	for (const { target, firstWord } of prepared.entries) {
+		// A note never mentions itself.
+		if (target.path === sourcePath) continue;
+		// A title can only occur here if its first word does, and that word is whole in the
+		// body exactly when it is whole in the title: an occurrence is bounded by non-word
+		// characters, so the title's interior structure carries over unchanged. The lookup is
+		// therefore exact — it rules a target out only when a full scan would have found
+		// nothing — and it rules out almost all of them.
+		if (firstWord !== null && !wordsInNote.has(firstWord)) continue;
+
 		for (const [start, end] of findWholeWordOccurrences(masked, target.title)) {
 			if (overlaps(start, end)) continue;
 
