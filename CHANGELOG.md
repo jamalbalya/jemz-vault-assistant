@@ -5,6 +5,55 @@ All notable changes to Jemz Vault Assistant are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] — 2026-08-29
+
+A bug-fix release from a full audit of the plugin. Nothing here is a new feature; several of
+the fixes change what the plugin does, which is why this is a minor rather than a patch
+release. Every fix ships with a test that fails without it.
+
+### Fixed
+
+- **A health scan no longer freezes Obsidian on a vault whose notes have descriptive names.**
+  The duplicate-title pass compared every title with every other one and computed each edit
+  distance in full: 80 seconds of frozen UI on 5,000 such notes, and close to five minutes on
+  10,000. A vault whose notes are called `note-1`, `note-2` never reached the pass at all,
+  which is why no benchmark had caught it. Same duplicates reported, 2.8 seconds.
+- **The Unlinked mentions view no longer searches the whole vault for every note.** It scanned
+  each note's body once per note title in the vault, and rebuilt the search order every time:
+  3.4 seconds on 2,000 notes, well over a minute on 10,000. Now 0.25 seconds, reporting
+  exactly the same mentions.
+- **"Create note" on a broken link now creates the note where the link points.**
+  `[[Projects/Roadmap]]` addresses a path, and the note was created in the inbox folder
+  instead — so the fix reported success and left the link exactly as broken as it was.
+- **A capture no longer writes frontmatter Obsidian cannot read.** A source typed as
+  `[1] Deep Work` broke the whole properties block; one typed as `#Roadmap` was read as a
+  comment and silently became empty. Values are now quoted whenever YAML would misread them.
+- **Archiving two same-named files from different folders keeps both.** They were planned into
+  one destination, and the second move failed against a preview that promised it would work.
+- **The Find tab's Orphans list and the Health tab's orphan count agree again.** A note whose
+  only link points at itself was an orphan in one tab and not in the other.
+- **Capture and triage are counted again when analytics are switched on.** Both call sites
+  named event ids that were not on the allow-list, so those counters stayed at zero and every
+  capture logged a warning to the console.
+- **The tag prompt inside triage offers the vault's tags**, most used first. It had no
+  autocomplete at all, while the identical prompt in the inbox list did.
+- Disabling the plugin or quitting Obsidian with triage open no longer leaves a session
+  summary behind, offering to start a session against services that are shutting down.
+- The Find tab, the filter rows and the health dashboard no longer accumulate event listeners
+  as they redraw. Besides the leak, a control that had been rendered away could still act:
+  a stale saved-view button still toggled its view, and a stale filter row still edited the
+  filter list.
+- A note that links to itself is no longer recorded as its own backlink after it is edited,
+  which had made the `has backlinks` search filter disagree with itself.
+
+### Security
+
+- A backup folder recorded in `data.json` can no longer escape the backup folder with a `..`
+  segment. The path is confined by a prefix test, and `..` survived it while resolving
+  somewhere else entirely — turning routine housekeeping into a recursive delete outside the
+  folder the check exists to confine it to. The same guard now covers restoring a backup, and
+  the note a broken-link fix creates.
+
 ## [1.1.0] — 2026-08-04
 
 Addresses every warning and recommendation raised by the Obsidian community-plugin review.
