@@ -104,7 +104,11 @@ export default class JemzVaultAssistantPlugin extends Plugin {
 	}
 
 	override onunload(): void {
-		this.triage?.exit();
+		// `unload()`, not `exit()`: the plugin is going away, so the overlay has to come off
+		// `document.body` with no summary behind it. A summary raised here would outlive the
+		// plugin that owns it, and its "Continue triaging" button would start a session
+		// against services that are already being torn down.
+		this.triage?.unload();
 		this.health?.dispose();
 		this.scanEngine?.cancel();
 		this.statusBar?.dispose();
