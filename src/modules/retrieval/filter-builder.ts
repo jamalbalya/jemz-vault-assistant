@@ -105,7 +105,10 @@ export class FilterBuilder {
 	private readonly rowsEl: HTMLElement;
 	private readonly logicSelectEl: HTMLSelectElement;
 	private readonly listId: string;
+	/** Listeners on the chrome, which outlives every row rebuild. */
 	private readonly cleanups: (() => void)[] = [];
+	/** Listeners on the current rows, released whenever the rows are rebuilt. */
+	private readonly rowCleanups: (() => void)[] = [];
 	private readonly now: () => number;
 	private rows: Filter[];
 	private logicValue: FilterLogic;
@@ -166,6 +169,7 @@ export class FilterBuilder {
 
 	/** Release every listener this builder registered and detach its DOM. */
 	destroy(): void {
+		this.releaseRowListeners();
 		for (const cleanup of this.cleanups.splice(0)) cleanup();
 		this.rootEl.detach();
 	}
@@ -223,8 +227,18 @@ export class FilterBuilder {
 	}
 
 	private renderRows(): void {
+		// Every row is rebuilt here, so the listeners bound to the outgoing ones go first.
+		// `empty()` detaches the elements but leaves their handlers attached and their
+		// closures reachable — each holding a row index that no longer means anything, so a
+		// stale element could still edit the filter list, and the detached subtree could not
+		// be collected for as long as the tab stayed open.
+		this.releaseRowListeners();
 		this.rowsEl.empty();
 		this.rows.forEach((filter, index) => this.renderRow(filter, index));
+	}
+
+	private releaseRowListeners(): void {
+		for (const cleanup of this.rowCleanups.splice(0)) cleanup();
 	}
 
 	private renderRow(filter: Filter, index: number): void {
@@ -237,12 +251,12 @@ export class FilterBuilder {
 			fieldSelect.createEl('option', { value: field, text: STRINGS.find.fields[field] });
 		}
 		fieldSelect.value = filter.field;
-		this.on(fieldSelect, 'change', () => this.onFieldChanged(index, fieldSelect.value));
+		this.onRow(fieldSelect, 'change', () => this.onFieldChanged(index, fieldSelect.value));
 
 		const operatorSelect = row.createEl('select', { cls: 'dropdown jva-filter-row__operator' });
 		operatorSelect.setAttr('aria-label', STRINGS.find.fields[filter.field]);
 		fillOperators(operatorSelect, filter.field, filter.operator);
-		this.on(operatorSelect, 'change', () =>
+		this.onRow(operatorSelect, 'change', () =>
 			this.onOperatorChanged(index, operatorSelect.value),
 		);
 
@@ -254,7 +268,7 @@ export class FilterBuilder {
 			});
 			keyInput.value = filter.key ?? '';
 			keyInput.setAttr('aria-label', STRINGS.find.fields.frontmatter);
-			this.on(keyInput, 'input', () => this.updateFilter(index, { key: keyInput.value }));
+			this.onRow(keyInput, 'input', () => this.updateFilter(index, { key: keyInput.value }));
 		}
 
 		this.renderValueInputs(row, filter, index);
@@ -279,7 +293,7 @@ export class FilterBuilder {
 		primary.value = this.displayValue(filter.field, filter.value);
 		primary.setAttr('aria-label', STRINGS.find.fields[filter.field]);
 		this.applySuggestionList(primary, filter.field);
-		this.on(primary, 'input', () => this.updateFilter(index, { value: primary.value }));
+		this.onRow(primary, 'input', () => this.updateFilter(index, { value: primary.value }));
 
 		if (!needsSecondValue(filter.field, filter.operator)) return;
 
@@ -289,7 +303,7 @@ export class FilterBuilder {
 		});
 		secondary.value = this.displayValue(filter.field, filter.value2 ?? '');
 		secondary.setAttr('aria-label', STRINGS.find.fields[filter.field]);
-		this.on(secondary, 'input', () => this.updateFilter(index, { value2: secondary.value }));
+		this.onRow(secondary, 'input', () => this.updateFilter(index, { value2: secondary.value }));
 	}
 
 	private applySuggestionList(input: HTMLInputElement, field: FilterField): void {
@@ -367,10 +381,19 @@ export class FilterBuilder {
 		this.options.onChange(this.filters, this.logicValue);
 	}
 
-	/** Add a listener and remember how to remove it, so {@link destroy} leaks nothing. */
+	/**
+	 * Add a listener to the chrome and remember how to remove it, so {@link destroy} leaks
+	 * nothing. For anything inside a row use {@link onRow}, which is released per rebuild.
+	 */
 	private on(el: HTMLElement, type: string, handler: (event: Event) => void): void {
 		el.addEventListener(type, handler);
 		this.cleanups.push(() => el.removeEventListener(type, handler));
+	}
+
+	/** Add a listener that lives only as long as the current set of rows. */
+	private onRow(el: HTMLElement, type: string, handler: (event: Event) => void): void {
+		el.addEventListener(type, handler);
+		this.rowCleanups.push(() => el.removeEventListener(type, handler));
 	}
 }
 
