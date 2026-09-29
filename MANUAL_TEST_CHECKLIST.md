@@ -1,6 +1,6 @@
 # Manual verification checklist
 
-From addendum appendix A. Everything that can be automated already is — 723 automated tests
+From addendum appendix A. Everything that can be automated already is — the automated suite
 cover the logic, and the numbers below are asserted in
 `tests/integration/health-scan.test.ts`. What remains here needs a running Obsidian: real
 hotkeys, a real on-screen keyboard, real touch targets, and real memory behaviour over time.

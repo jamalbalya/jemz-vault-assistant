@@ -24,7 +24,7 @@ Settings → Community plugins → Browse → search for **Jemz Vault Assistant*
 2. Copy them into `<your vault>/.obsidian/plugins/jemz-vault-assistant/`.
 3. Reload Obsidian and enable the plugin in **Settings → Community plugins**.
 
-Requires Obsidian **1.7.2** or newer. Works on desktop and mobile.
+Requires Obsidian **1.13.0** or newer. Works on desktop and mobile.
 
 ---
 
@@ -199,7 +199,7 @@ installed, this plugin can show its status; if not, nothing changes.
 npm install
 npm run dev          # watch build
 npm run build        # typecheck + production bundle
-npm test             # 723 tests
+npm test             # unit + integration suite
 npm run test:coverage
 npm run test:perf    # benchmarks on 1k / 5k / 10k note vaults
 npm run lint
