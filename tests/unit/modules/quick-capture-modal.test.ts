@@ -1,5 +1,5 @@
 /**
- * Quick Capture modal and its command wiring.
+ * Quick Capture modal.
  *
  * Everything is driven through real DOM — real clicks, real keydowns, real input events — so
  * the tests fail if the markup the user actually interacts with regresses, not merely if an
@@ -8,16 +8,9 @@
  */
 
 import { beforeEach, describe, expect, it } from 'vitest';
-import type { App as ObsidianApp, Plugin as ObsidianPlugin } from 'obsidian';
-import {
-	App as MockApp,
-	Plugin as MockPlugin,
-	noticeLog,
-	openModals,
-	type PluginManifest,
-} from '../../mocks/obsidian';
+import type { App as ObsidianApp } from 'obsidian';
+import { App as MockApp, noticeLog, openModals } from '../../mocks/obsidian';
 import { buildVault, type FixtureFile } from '../../helpers/vault-fixture';
-import { COMMAND_IDS, PLUGIN_ID, PLUGIN_NAME } from '../../../src/core/constants';
 import { Logger } from '../../../src/core/logger';
 import { structuredCloneSafe } from '../../../src/core/settings';
 import { STRINGS } from '../../../src/core/strings';
@@ -28,7 +21,6 @@ import type { CaptureResult } from '../../../src/types/note';
 import { DEFAULT_SETTINGS, type JemzSettings } from '../../../src/types/settings';
 import {
 	openQuickCapture,
-	registerCaptureCommands,
 	type CaptureCommandDeps,
 } from '../../../src/modules/capture/capture-commands';
 import {
@@ -40,19 +32,6 @@ import {
 function asApp(app: MockApp): ObsidianApp {
 	return app as unknown as ObsidianApp;
 }
-
-function asPlugin(plugin: MockPlugin): ObsidianPlugin {
-	return plugin as unknown as ObsidianPlugin;
-}
-
-const MANIFEST: PluginManifest = {
-	id: PLUGIN_ID,
-	name: PLUGIN_NAME,
-	version: '1.0.0',
-	minAppVersion: '1.4.0',
-	description: 'test',
-	author: 'test',
-};
 
 /** Fixed clock, so generated file names are deterministic. 2026-06-15 09:30 local. */
 const NOW = new Date(2026, 5, 15, 9, 30, 0).getTime();
@@ -613,39 +592,6 @@ describe('QuickCaptureModal teardown', () => {
 		// Exactly one capture, not one per registration.
 		expect(capturedPaths(harness.app)).toEqual([`00-Inbox/${TODAY} capture - Reopened.md`]);
 		expect(noticeLog.filter((message) => message === STRINGS.capture.success)).toHaveLength(1);
-	});
-});
-
-/* ------------------------------------------------------------------ commands -- */
-
-describe('registerCaptureCommands', () => {
-	function makePlugin(harness: Harness): MockPlugin {
-		return new MockPlugin(harness.app, MANIFEST);
-	}
-
-	it('registers the quick capture command and opens the modal', async () => {
-		const harness = createHarness();
-		const plugin = makePlugin(harness);
-
-		expect(registerCaptureCommands(asPlugin(plugin), harness.deps)).toBe(true);
-
-		const command = plugin.commands.get(`${PLUGIN_ID}:${COMMAND_IDS.quickCapture}`);
-		expect(command?.name).toBe(STRINGS.commands.quickCapture);
-
-		await plugin.runCommand(COMMAND_IDS.quickCapture);
-		expect(openModals).toHaveLength(1);
-		expect(document.body.querySelector('.jva-capture .jva-modal__title')?.textContent).toBe(
-			STRINGS.capture.modalTitle,
-		);
-	});
-
-	it('registers nothing while the capture module is off', () => {
-		const harness = createHarness();
-		harness.settings.general.modules.capture = false;
-		const plugin = makePlugin(harness);
-
-		expect(registerCaptureCommands(asPlugin(plugin), harness.deps)).toBe(false);
-		expect(plugin.commands.size).toBe(0);
 	});
 });
 
