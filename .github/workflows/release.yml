@@ -47,6 +47,11 @@ jobs:
             - run: npm run typecheck
             - run: npm test
 
+            # The scan budgets are a correctness gate, not a nice-to-have: the 1.2.0 release
+            # exists because a detector went quadratic and froze the UI for 80 seconds on a
+            # vault the functional tests were all happy with.
+            - run: npm run test:perf
+
             - name: Build
               run: npm run build
 
