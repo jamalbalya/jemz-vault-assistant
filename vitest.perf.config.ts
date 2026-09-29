@@ -21,9 +21,10 @@ export default defineConfig({
 		include: ['tests/perf/**/*.test.ts'],
 		testTimeout: 300_000,
 		hookTimeout: 300_000,
-		// Benchmarks must not contend with each other for CPU.
+		// Benchmarks must not contend with each other for CPU. `maxWorkers: 1` replaces
+		// vitest 3's `poolOptions.threads.singleThread`, which vitest 4 removed.
 		fileParallelism: false,
 		pool: 'threads',
-		poolOptions: { threads: { singleThread: true } },
+		maxWorkers: 1,
 	},
 });
