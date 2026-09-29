@@ -5,6 +5,35 @@ All notable changes to Jemz Vault Assistant are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] — 2026-09-29
+
+A documentation and packaging release from a full audit. No behaviour changes for anyone
+already running the plugin; the fixes are to things that were saying something untrue.
+
+### Fixed
+
+- **Obsidian 1.7.2–1.12 users can install the plugin again.** `versions.json` never recorded
+  the 1.0.0 → 1.7.2 pairing, so Obsidian had no compatible version to fall back to for anyone
+  below the 1.13.0 the current release requires, and offered them nothing at all.
+- **The README no longer claims the plugin runs on Obsidian 1.7.2.** The floor moved to 1.13.0
+  in 1.1.0, when settings adopted the declarative `getSettingDefinitions()` API and
+  `setDestructive()`; the README was never updated, so it promised an install that Obsidian
+  itself refuses.
+- The README and the manual checklist no longer quote a fixed automated-test count. Both had
+  drifted from the real number, which is what a hardcoded count in prose does.
+
+### Removed
+
+- `registerCaptureCommands()`, which nothing called. The plugin registers quick capture in
+  `main.ts` and gates it when it runs, so a disabled module explains itself instead of leaving
+  a command that is silently absent until the next restart. Its documentation described the
+  superseded behaviour, and two tests asserted it.
+
+### Internal
+
+- The release workflow runs `npm run test:perf`. The scan budgets are the gate that the 1.2.0
+  quadratic-detector freeze got past, and they were not being enforced on the way to a tag.
+
 ## [1.2.0] — 2026-08-29
 
 A bug-fix release from a full audit of the plugin. Nothing here is a new feature; several of
